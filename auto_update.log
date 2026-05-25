@@ -1,0 +1,224 @@
+2026-05-24 07:36:11 [INFO] ============================================================
+2026-05-24 07:36:11 [INFO] AUTO UPDATE & RETRAIN — 2026-05-24 07:36:11
+2026-05-24 07:36:11 [INFO] ============================================================
+2026-05-24 07:36:11 [INFO] *** DRY RUN MODE — no files will be modified ***
+2026-05-24 07:36:11 [INFO] ============================================================
+2026-05-24 07:36:11 [INFO] STEP 1/3 — DATA UPDATE
+2026-05-24 07:36:11 [INFO] ============================================================
+2026-05-24 07:36:11 [INFO] Backing up 162 CSV file(s) → /Users/karthikyekkaladevi/Downloads/EVERYTHING/code_projects/tennis_tournament_predictor_python/backups/20260524_073611/tennis_atp-master
+2026-05-24 07:36:11 [INFO] Latest tournament date already in dataset: 2026-01-17
+2026-05-24 07:36:11 [INFO] Will fetch/refresh years: [2026]
+2026-05-24 07:36:11 [INFO] 
+2026-05-24 07:36:11 [INFO] --- Processing year 2026 ---
+2026-05-24 07:36:11 [INFO]   Fetching 2026 from TML-Database: https://raw.githubusercontent.com/Tennismylife/TML-Database/master/2026.csv
+2026-05-24 07:36:11 [INFO]     ✓ Received 137 rows for 2026
+2026-05-24 07:36:11 [INFO]     Filtered out 112 non-main-tour rows (Challengers / Davis Cup / etc.)
+2026-05-24 07:36:11 [INFO]     No new matches to add — dataset already up-to-date for this year.
+2026-05-24 07:36:11 [INFO]     [DRY RUN] Would write 137 rows → atp_matches_2026.csv
+2026-05-24 07:36:11 [INFO] 
+2026-05-24 07:36:11 [INFO] ============================================================
+2026-05-24 07:36:11 [INFO] DATA UPDATE SUMMARY
+2026-05-24 07:36:11 [INFO] ============================================================
+2026-05-24 07:36:11 [INFO]   2026: 0 new match(es) added
+2026-05-24 07:36:11 [INFO]   Total new matches: 0
+2026-05-24 07:36:11 [INFO] ============================================================
+2026-05-24 07:36:11 [INFO] --update-only: skipping model retraining phase.
+2026-05-24 07:36:11 [INFO] [DRY RUN] Would write manifest → auto_update_manifest.json
+2026-05-24 07:36:11 [INFO] Manifest content: {
+  "run_at": "2026-05-24T14:36:11.569160+00:00",
+  "data_update": {
+    "2026": 0
+  },
+  "models_retrained": [],
+  "dry_run": true
+}
+2026-05-24 07:36:11 [INFO] 
+2026-05-24 07:36:11 [INFO] ============================================================
+2026-05-24 07:36:11 [INFO] FINAL SUMMARY
+2026-05-24 07:36:11 [INFO] ============================================================
+2026-05-24 07:36:11 [INFO] Data update: 0 new matches added across 1 year(s).
+2026-05-24 07:36:11 [INFO] ============================================================
+2026-05-24 07:37:30 [INFO] ============================================================
+2026-05-24 07:37:30 [INFO] AUTO UPDATE & RETRAIN — 2026-05-24 07:37:30
+2026-05-24 07:37:30 [INFO] ============================================================
+2026-05-24 07:37:30 [INFO] *** DRY RUN MODE — no files will be modified ***
+2026-05-24 07:37:30 [INFO] ============================================================
+2026-05-24 07:37:30 [INFO] STEP 1/3 — DATA UPDATE
+2026-05-24 07:37:30 [INFO] ============================================================
+2026-05-24 07:37:30 [INFO] Backing up 162 CSV file(s) → /Users/karthikyekkaladevi/Downloads/EVERYTHING/code_projects/tennis_tournament_predictor_python/backups/20260524_073730/tennis_atp-master
+2026-05-24 07:37:30 [INFO] Latest tournament date already in dataset: 2026-01-17
+2026-05-24 07:37:30 [INFO] Will fetch/refresh years: [2026]
+2026-05-24 07:37:30 [INFO] 
+2026-05-24 07:37:30 [INFO] --- Processing year 2026 ---
+2026-05-24 07:37:30 [INFO]   Fetching 2026 from TML-Database: https://raw.githubusercontent.com/Tennismylife/TML-Database/master/2026.csv
+2026-05-24 07:37:30 [INFO]     ✓ Received 137 rows for 2026
+2026-05-24 07:37:30 [INFO]     Filtered out 112 non-main-tour rows (Challengers / Davis Cup / etc.)
+2026-05-24 07:37:30 [INFO]     No new matches to add — dataset already up-to-date for this year.
+2026-05-24 07:37:30 [INFO]     [DRY RUN] Would write 137 rows → atp_matches_2026.csv
+2026-05-24 07:37:30 [INFO] 
+2026-05-24 07:37:30 [INFO] ============================================================
+2026-05-24 07:37:30 [INFO] DATA UPDATE SUMMARY
+2026-05-24 07:37:30 [INFO] ============================================================
+2026-05-24 07:37:30 [INFO]   2026: 0 new match(es) added
+2026-05-24 07:37:30 [INFO]   Total new matches: 0
+2026-05-24 07:37:30 [INFO] ============================================================
+2026-05-24 07:37:30 [INFO] ============================================================
+2026-05-24 07:37:30 [INFO] STEP 2/3 — MODEL RETRAINING
+2026-05-24 07:37:30 [INFO] ============================================================
+2026-05-24 07:37:30 [INFO] Training all models: ['logistic_regression', 'knn', 'svm', 'random_forest', 'xgboost', 'neural_network']
+2026-05-24 07:37:30 [INFO] Backing up models/ → /Users/karthikyekkaladevi/Downloads/EVERYTHING/code_projects/tennis_tournament_predictor_python/backups/20260524_073730/models
+2026-05-24 07:37:30 [INFO] [DRY RUN] Would retrain models. Skipping actual training.
+2026-05-24 07:37:30 [INFO] [DRY RUN] Would write manifest → auto_update_manifest.json
+2026-05-24 07:37:30 [INFO] Manifest content: {
+  "run_at": "2026-05-24T14:37:30.981938+00:00",
+  "data_update": {
+    "2026": 0
+  },
+  "models_retrained": [
+    "logistic_regression",
+    "knn",
+    "svm",
+    "random_forest",
+    "xgboost",
+    "neural_network"
+  ],
+  "dry_run": true
+}
+2026-05-24 07:37:30 [INFO] 
+2026-05-24 07:37:30 [INFO] ============================================================
+2026-05-24 07:37:30 [INFO] FINAL SUMMARY
+2026-05-24 07:37:30 [INFO] ============================================================
+2026-05-24 07:37:30 [INFO] Data update: 0 new matches added across 1 year(s).
+2026-05-24 07:37:30 [INFO] Model retraining: completed successfully.
+2026-05-24 07:37:30 [INFO] ============================================================
+2026-05-24 07:38:22 [INFO] ============================================================
+2026-05-24 07:38:22 [INFO] AUTO UPDATE & RETRAIN — 2026-05-24 07:38:22
+2026-05-24 07:38:22 [INFO] ============================================================
+2026-05-24 07:38:22 [INFO] ============================================================
+2026-05-24 07:38:22 [INFO] STEP 1/3 — DATA UPDATE
+2026-05-24 07:38:22 [INFO] ============================================================
+2026-05-24 07:38:22 [INFO] Backing up 162 CSV file(s) → /Users/karthikyekkaladevi/Downloads/EVERYTHING/code_projects/tennis_tournament_predictor_python/backups/20260524_073822/tennis_atp-master
+2026-05-24 07:38:22 [INFO] Data backup complete.
+2026-05-24 07:38:22 [INFO] Latest tournament date already in dataset: 2026-01-17
+2026-05-24 07:38:22 [INFO] Will fetch/refresh years: [2026]
+2026-05-24 07:38:22 [INFO] 
+2026-05-24 07:38:22 [INFO] --- Processing year 2026 ---
+2026-05-24 07:38:22 [INFO]   Fetching 2026 from TML-Database: https://raw.githubusercontent.com/Tennismylife/TML-Database/master/2026.csv
+2026-05-24 07:38:23 [INFO]     ✓ Received 137 rows for 2026
+2026-05-24 07:38:23 [INFO]     Filtered out 112 non-main-tour rows (Challengers / Davis Cup / etc.)
+2026-05-24 07:38:23 [INFO]     No new matches to add — dataset already up-to-date for this year.
+2026-05-24 07:38:23 [INFO]     ✓ Saved 137 rows → atp_matches_2026.csv
+2026-05-24 07:38:23 [INFO] 
+2026-05-24 07:38:23 [INFO] ============================================================
+2026-05-24 07:38:23 [INFO] DATA UPDATE SUMMARY
+2026-05-24 07:38:23 [INFO] ============================================================
+2026-05-24 07:38:23 [INFO]   2026: 0 new match(es) added
+2026-05-24 07:38:23 [INFO]   Total new matches: 0
+2026-05-24 07:38:23 [INFO] ============================================================
+2026-05-24 07:38:23 [INFO] ============================================================
+2026-05-24 07:38:23 [INFO] STEP 2/3 — MODEL RETRAINING
+2026-05-24 07:38:23 [INFO] ============================================================
+2026-05-24 07:38:23 [INFO] Training all models: ['logistic_regression', 'knn', 'svm', 'random_forest', 'xgboost', 'neural_network']
+2026-05-24 07:38:23 [INFO] Backing up models/ → /Users/karthikyekkaladevi/Downloads/EVERYTHING/code_projects/tennis_tournament_predictor_python/backups/20260524_073823/models
+2026-05-24 07:38:23 [INFO] Model backup complete.
+2026-05-24 07:38:40 [INFO] Loading data from '/Users/karthikyekkaladevi/Downloads/EVERYTHING/code_projects/tennis_tournament_predictor_python/tennis_atp-master' (years 1968–2026)…
+2026-05-24 07:38:40 [INFO] Loaded 198077 rows across 49 columns.
+2026-05-24 07:38:40 [INFO] Running temporal symmetric feature engineering…
+2026-05-24 07:38:48 [INFO] Feature engineering complete — 15 features, 176398 usable rows.
+2026-05-24 07:38:48 [INFO] Splitting data temporally (80%% train / 20%% test by date)…
+2026-05-24 07:38:48 [INFO] Train: 141118 rows (up to 2012-04-06)  |  Test: 35280 rows (from 2012-04-06)
+2026-05-24 07:38:48 [INFO] Starting model training…
+2026-05-24 07:45:00 [WARNING] You are saving your model as an HDF5 file via `model.save()` or `keras.saving.save_model(model)`. This file format is considered legacy. We recommend using instead the native Keras format, e.g. `model.save('my_model.keras')` or `keras.saving.save_model(model, 'my_model.keras')`. 
+2026-05-24 07:45:01 [WARNING] You are saving your model as an HDF5 file via `model.save()` or `keras.saving.save_model(model)`. This file format is considered legacy. We recommend using instead the native Keras format, e.g. `model.save('my_model.keras')` or `keras.saving.save_model(model, 'my_model.keras')`. 
+2026-05-24 07:45:02 [WARNING] You are saving your model as an HDF5 file via `model.save()` or `keras.saving.save_model(model)`. This file format is considered legacy. We recommend using instead the native Keras format, e.g. `model.save('my_model.keras')` or `keras.saving.save_model(model, 'my_model.keras')`. 
+2026-05-24 07:45:03 [WARNING] You are saving your model as an HDF5 file via `model.save()` or `keras.saving.save_model(model)`. This file format is considered legacy. We recommend using instead the native Keras format, e.g. `model.save('my_model.keras')` or `keras.saving.save_model(model, 'my_model.keras')`. 
+2026-05-24 07:45:03 [WARNING] You are saving your model as an HDF5 file via `model.save()` or `keras.saving.save_model(model)`. This file format is considered legacy. We recommend using instead the native Keras format, e.g. `model.save('my_model.keras')` or `keras.saving.save_model(model, 'my_model.keras')`. 
+2026-05-24 07:45:04 [WARNING] You are saving your model as an HDF5 file via `model.save()` or `keras.saving.save_model(model)`. This file format is considered legacy. We recommend using instead the native Keras format, e.g. `model.save('my_model.keras')` or `keras.saving.save_model(model, 'my_model.keras')`. 
+2026-05-24 07:45:04 [WARNING] You are saving your model as an HDF5 file via `model.save()` or `keras.saving.save_model(model)`. This file format is considered legacy. We recommend using instead the native Keras format, e.g. `model.save('my_model.keras')` or `keras.saving.save_model(model, 'my_model.keras')`. 
+2026-05-24 07:45:04 [WARNING] You are saving your model as an HDF5 file via `model.save()` or `keras.saving.save_model(model)`. This file format is considered legacy. We recommend using instead the native Keras format, e.g. `model.save('my_model.keras')` or `keras.saving.save_model(model, 'my_model.keras')`. 
+2026-05-24 07:45:05 [WARNING] You are saving your model as an HDF5 file via `model.save()` or `keras.saving.save_model(model)`. This file format is considered legacy. We recommend using instead the native Keras format, e.g. `model.save('my_model.keras')` or `keras.saving.save_model(model, 'my_model.keras')`. 
+2026-05-24 07:45:06 [WARNING] You are saving your model as an HDF5 file via `model.save()` or `keras.saving.save_model(model)`. This file format is considered legacy. We recommend using instead the native Keras format, e.g. `model.save('my_model.keras')` or `keras.saving.save_model(model, 'my_model.keras')`. 
+2026-05-24 07:45:06 [WARNING] You are saving your model as an HDF5 file via `model.save()` or `keras.saving.save_model(model)`. This file format is considered legacy. We recommend using instead the native Keras format, e.g. `model.save('my_model.keras')` or `keras.saving.save_model(model, 'my_model.keras')`. 
+2026-05-24 07:45:07 [WARNING] You are saving your model as an HDF5 file via `model.save()` or `keras.saving.save_model(model)`. This file format is considered legacy. We recommend using instead the native Keras format, e.g. `model.save('my_model.keras')` or `keras.saving.save_model(model, 'my_model.keras')`. 
+2026-05-24 07:45:07 [WARNING] You are saving your model as an HDF5 file via `model.save()` or `keras.saving.save_model(model)`. This file format is considered legacy. We recommend using instead the native Keras format, e.g. `model.save('my_model.keras')` or `keras.saving.save_model(model, 'my_model.keras')`. 
+2026-05-24 07:45:09 [WARNING] You are saving your model as an HDF5 file via `model.save()` or `keras.saving.save_model(model)`. This file format is considered legacy. We recommend using instead the native Keras format, e.g. `model.save('my_model.keras')` or `keras.saving.save_model(model, 'my_model.keras')`. 
+2026-05-24 07:45:09 [INFO] Model training complete. Artifacts saved to '/Users/karthikyekkaladevi/Downloads/EVERYTHING/code_projects/tennis_tournament_predictor_python/models/'.
+2026-05-24 07:45:10 [INFO] Manifest written → auto_update_manifest.json
+2026-05-24 07:45:10 [INFO] 
+2026-05-24 07:45:10 [INFO] ============================================================
+2026-05-24 07:45:10 [INFO] FINAL SUMMARY
+2026-05-24 07:45:10 [INFO] ============================================================
+2026-05-24 07:45:10 [INFO] Data update: 0 new matches added across 1 year(s).
+2026-05-24 07:45:10 [INFO] Model retraining: completed successfully.
+2026-05-24 07:45:10 [INFO] ============================================================
+2026-05-25 10:03:03 [INFO] ============================================================
+2026-05-25 10:03:03 [INFO] AUTO UPDATE & RETRAIN — 2026-05-25 10:03:03
+2026-05-25 10:03:03 [INFO] ============================================================
+2026-05-25 10:03:03 [INFO] ============================================================
+2026-05-25 10:03:03 [INFO] STEP 1/3 — DATA UPDATE
+2026-05-25 10:03:03 [INFO] ============================================================
+2026-05-25 10:03:03 [INFO] Backing up 162 CSV file(s) → /Users/karthikyekkaladevi/Downloads/EVERYTHING/code_projects/tennis_tournament_predictor_python/backups/20260525_100303/tennis_atp-master
+2026-05-25 10:03:04 [INFO] Data backup complete.
+2026-05-25 10:03:04 [INFO] Latest tournament date already in dataset: 2026-01-17
+2026-05-25 10:03:04 [INFO] Will fetch/refresh years: [2026]
+2026-05-25 10:03:04 [INFO] 
+2026-05-25 10:03:04 [INFO] --- Processing year 2026 ---
+2026-05-25 10:03:04 [INFO]   Fetching 2026 from Sackmann repo: https://raw.githubusercontent.com/JeffSackmann/tennis_atp/master/atp_matches_2026.csv
+2026-05-25 10:03:05 [INFO]     ✓ Received 1322 rows for 2026
+2026-05-25 10:03:05 [INFO]     Filtered out 128 non-main-tour rows (Challengers / Davis Cup / etc.)
+2026-05-25 10:03:05 [INFO]     Adding 1194 new match(es) (dataset had 137, source has 1194).
+2026-05-25 10:03:05 [INFO]     ✓ Saved 1331 rows → atp_matches_2026.csv
+2026-05-25 10:03:05 [INFO] 
+2026-05-25 10:03:05 [INFO] ============================================================
+2026-05-25 10:03:05 [INFO] DATA UPDATE SUMMARY
+2026-05-25 10:03:05 [INFO] ============================================================
+2026-05-25 10:03:05 [INFO]   2026: 1194 new match(es) added
+2026-05-25 10:03:05 [INFO]   Total new matches: 1194
+2026-05-25 10:03:05 [INFO] ============================================================
+2026-05-25 10:03:05 [INFO] --update-only: skipping model retraining phase.
+2026-05-25 10:03:05 [INFO] Manifest written → auto_update_manifest.json
+2026-05-25 10:03:05 [INFO] 
+2026-05-25 10:03:05 [INFO] ============================================================
+2026-05-25 10:03:05 [INFO] FINAL SUMMARY
+2026-05-25 10:03:05 [INFO] ============================================================
+2026-05-25 10:03:05 [INFO] Data update: 1194 new matches added across 1 year(s).
+2026-05-25 10:03:05 [INFO] ============================================================
+2026-05-25 10:27:40 [INFO] ============================================================
+2026-05-25 10:27:40 [INFO] AUTO UPDATE & RETRAIN — 2026-05-25 10:27:40
+2026-05-25 10:27:40 [INFO] ============================================================
+2026-05-25 10:27:40 [INFO] *** DRY RUN MODE — no files will be modified ***
+2026-05-25 10:27:40 [INFO] ============================================================
+2026-05-25 10:27:40 [INFO] STEP 1/3 — DATA UPDATE
+2026-05-25 10:27:40 [INFO] ============================================================
+2026-05-25 10:27:40 [INFO] Latest tournament date already in dataset: 2026-05-17
+2026-05-25 10:27:40 [INFO] Will fetch/refresh years: [2026]
+2026-05-25 10:27:40 [INFO] 
+2026-05-25 10:27:40 [INFO] --- Processing year 2026 ---
+2026-05-25 10:27:40 [INFO]   Fetching 2026 from Sackmann repo: https://raw.githubusercontent.com/JeffSackmann/tennis_atp/master/atp_matches_2026.csv
+2026-05-25 10:27:41 [INFO]     ✓ Received 1322 rows for 2026
+2026-05-25 10:27:41 [INFO]     Filtered out 128 non-main-tour rows (Challengers / Davis Cup / etc.)
+2026-05-25 10:27:41 [INFO]     No new matches to add — dataset already up-to-date for this year.
+2026-05-25 10:27:41 [INFO]     [DRY RUN] Would write 1331 rows → atp_matches_2026.csv
+2026-05-25 10:27:41 [INFO] 
+2026-05-25 10:27:41 [INFO] ============================================================
+2026-05-25 10:27:41 [INFO] DATA UPDATE SUMMARY
+2026-05-25 10:27:41 [INFO] ============================================================
+2026-05-25 10:27:41 [INFO]   2026: 0 new match(es) added
+2026-05-25 10:27:41 [INFO]   Total new matches: 0
+2026-05-25 10:27:41 [INFO] ============================================================
+2026-05-25 10:27:41 [INFO] --update-only: skipping model retraining phase.
+2026-05-25 10:27:41 [INFO] [DRY RUN] Would write manifest → auto_update_manifest.json
+2026-05-25 10:27:41 [INFO] Manifest content: {
+  "run_at": "2026-05-25T17:27:41.071285+00:00",
+  "data_update": {
+    "2026": 0
+  },
+  "models_retrained": [],
+  "dry_run": true
+}
+2026-05-25 10:27:41 [INFO] 
+2026-05-25 10:27:41 [INFO] ============================================================
+2026-05-25 10:27:41 [INFO] FINAL SUMMARY
+2026-05-25 10:27:41 [INFO] ============================================================
+2026-05-25 10:27:41 [INFO] Data update: 0 new matches added across 1 year(s).
+2026-05-25 10:27:41 [INFO] ============================================================

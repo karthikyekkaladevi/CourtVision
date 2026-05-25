@@ -1,0 +1,12 @@
+Players with the same first initial and last name:
+==================================================
+
+H Chung: Hong Chung, Hyeon Chung
+J Flores: Jesse Flores, Jose  Flores
+D Johnson: Damar Johnson, Damion Johnson
+A Kuznetsov: Alex Kuznetsov, Andrey Kuznetsov
+A Martin: Alberto Martin, Andrej Martin, Andres Martin
+E Nava: Eduardo Nava, Emilio Nava
+S Ratiwatana: Sanchai Ratiwatana, Sonchat Ratiwatana
+F Rodriguez: Federico Rodriguez, Francisco Rodriguez
+Z Zhang: Ze Zhang, Zhizhen Zhang
