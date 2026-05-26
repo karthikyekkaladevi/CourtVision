@@ -761,4 +761,3 @@ if __name__ == "__main__":
     ]
     
     results = simulator.simulate_tournament(players, surface='Hard', tourney_level='M', draw_size=8)
-    simulator.display_visual_tree(results)

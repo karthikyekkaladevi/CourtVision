@@ -503,12 +503,12 @@ class MatchPredictor:
 
     def display_predictions(self, predictions, player1_name="Player 1", player2_name="Player 2", sets_to_play=3):
         """Display predictions in a formatted way with player stats."""
-        # Extract stats (using copy if needed, but dict.pop modifies in place which is fine as we are done with it)
-        player1_stats = predictions.pop('_player1_stats', None)
-        player2_stats = predictions.pop('_player2_stats', None)
-        h2h = predictions.pop('_h2h', None)
+        # Use .get() to avoid mutating the caller's dict
+        player1_stats = predictions.get('_player1_stats', None)
+        player2_stats = predictions.get('_player2_stats', None)
+        h2h = predictions.get('_h2h', None)
         # tourney_level is no longer used for score simulation here as sets_to_play is provided
-        tourney_level = predictions.pop('_tourney_level', 'M')
+        tourney_level = predictions.get('_tourney_level', 'M')
 
 
         

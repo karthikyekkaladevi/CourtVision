@@ -107,7 +107,7 @@ def load_data(data_path='tennis_atp-master', start_year=1968, end_year=None, inc
         print(f"[OK] Successfully loaded total data: {df.shape[0]:,} rows, {df.shape[1]} columns")
         return df
     except FileNotFoundError:
-        print(f"[ERROR] File '{csv_path}' not found!")
+        print(f"[ERROR] File '{data_path}' not found!")
         raise
     except Exception as e:
         print(f"[ERROR] Loading data: {e}")
