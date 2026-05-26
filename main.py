@@ -12,7 +12,12 @@ from model_trainer import ModelTrainer
 from predictor import MatchPredictor
 from tournament_simulator import TournamentSimulator
 from data_scrape import scrape_latest_data
-from tournament_gui import launch_tournament_gui
+try:
+    from tournament_gui import launch_tournament_gui
+except ImportError:
+    def launch_tournament_gui():
+        print("  [WARN] pywebview not installed. Install with: pip install pywebview")
+        return False
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -153,7 +158,7 @@ def option_1_eda():
 def option_2_train():
     """Train all models."""
     print("\n[Option 2] Training models...")
-    print("This may take a while, especially for SVM and Neural Network...")
+    print("This may take a while, especially for Neural Network...")
     
     try:
         # Load data with user selection
@@ -188,26 +193,22 @@ def option_2_train():
         # Model Selection Menu
         print("\nSelect models to train:")
         print("  1. Logistic Regression")
-        print("  2. K-Nearest Neighbors")
-        print("  3. Support Vector Machine (Slow)")
-        print("  4. Random Forest")
-        print("  5. XGBoost")
-        print("  6. Neural Network (Slow)")
-        print("  7. Train All (Default)")
-        
-        selection = input("\nEnter choice(s) (e.g., 1,4,5 or leave blank for all): ").strip()
-        
+        print("  2. Random Forest")
+        print("  3. XGBoost")
+        print("  4. Neural Network (Slow)")
+        print("  5. Train All (Default)")
+
+        selection = input("\nEnter choice(s) (e.g., 1,2,3 or leave blank for all): ").strip()
+
         model_map = {
             '1': 'logistic_regression',
-            '2': 'knn',
-            '3': 'svm',
-            '4': 'random_forest',
-            '5': 'xgboost',
-            '6': 'neural_network'
+            '2': 'random_forest',
+            '3': 'xgboost',
+            '4': 'neural_network'
         }
         
         selected_keys = []
-        if selection and selection != '7':
+        if selection and selection != '5':
             choices = [c.strip() for c in selection.replace(',', ' ').split()]
             for c in choices:
                 if c in model_map:

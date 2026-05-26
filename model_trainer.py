@@ -10,7 +10,7 @@ import warnings
 import time
 warnings.filterwarnings('ignore')
 
-# Optional: Intel Extension for Scikit-learn (accelerates SVM, LogisticRegression, etc.)
+# Optional: Intel Extension for Scikit-learn (accelerates LogisticRegression, etc.)
 # Must be called before importing sklearn members
 try:
     from sklearnex import patch_sklearn
@@ -21,8 +21,6 @@ except ImportError:
 
 # Scikit-learn models
 from sklearn.linear_model import LogisticRegression
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -34,23 +32,44 @@ from sklearn.inspection import permutation_importance
 # XGBoost
 import xgboost as xgb
 
-# TensorFlow/Keras
-import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers, callbacks
+# TensorFlow/Keras — imported lazily to avoid startup hangs when TF is broken
+tf = None
+keras = None
+layers = None
+callbacks = None
+_tf_initialized = False
 
-# Configure TensorFlow for GPU usage
-# Try to enable memory growth to prevent TF from allocating all VRAM at once
-gpus = tf.config.list_physical_devices('GPU')
-if gpus:
+
+def _ensure_tensorflow():
+    """Lazily import TensorFlow and configure GPU. Called only when needed."""
+    global tf, keras, layers, callbacks, _tf_initialized
+    if _tf_initialized:
+        return tf is not None
+    _tf_initialized = True
     try:
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-        print(f"[INFO] TensorFlow configured to use GPU: {len(gpus)} device(s) found")
-    except RuntimeError as e:
-        print(f"[ERROR] TensorFlow GPU configuration failed: {e}")
-else:
-    print("[INFO] No GPU found for TensorFlow, using CPU.")
+        import tensorflow as _tf
+        tf = _tf
+        keras = tf.keras
+        from tensorflow.keras import layers as _layers, callbacks as _callbacks
+        layers = _layers
+        callbacks = _callbacks
+
+        # Configure GPU memory growth
+        gpus = tf.config.list_physical_devices('GPU')
+        if gpus:
+            try:
+                for gpu in gpus:
+                    tf.config.experimental.set_memory_growth(gpu, True)
+                print(f"[INFO] TensorFlow configured to use GPU: {len(gpus)} device(s) found")
+            except RuntimeError as e:
+                print(f"[ERROR] TensorFlow GPU configuration failed: {e}")
+        else:
+            print("[INFO] No GPU found for TensorFlow, using CPU.")
+        return True
+    except Exception as e:
+        print(f"[WARNING] TensorFlow not available: {e}")
+        print("          Neural Network training/loading will be skipped.")
+        return False
 
 
 class ModelTrainer:
@@ -90,72 +109,6 @@ class ModelTrainer:
         # Save model and scaler
         self.models['logistic_regression'] = pipeline
         self.scalers['logistic_regression'] = pipeline.named_steps['scaler']
-        
-        return results
-    
-    def train_knn(self, X_train, y_train, X_test, y_test):
-        """Train K-Nearest Neighbors model."""
-        print("\nTraining KNN...")
-        
-        # Create pipeline with scaling
-        pipeline = Pipeline([
-            ('scaler', StandardScaler()),
-            ('model', KNeighborsClassifier(n_neighbors=5))
-        ])
-        
-        # Use smaller sample for KNN if dataset is too large (KNN prediction is very slow)
-        if len(X_train) > 50000:
-            print(f"  Using sample of 50,000 for KNN training (Dataset size: {len(X_train):,})...")
-            sample_idx = np.random.choice(len(X_train), 50000, replace=False)
-            X_train_sample = X_train[sample_idx]
-            y_train_sample = y_train[sample_idx]
-            pipeline.fit(X_train_sample, y_train_sample)
-        else:
-            pipeline.fit(X_train, y_train)
-        
-        # Predictions
-        y_pred = pipeline.predict(X_test)
-        y_pred_proba = pipeline.predict_proba(X_test)[:, 1]
-        
-        # Evaluation
-        results = self._evaluate_model(y_test, y_pred, y_pred_proba, 'KNN')
-        
-        # Save model and scaler
-        self.models['knn'] = pipeline
-        self.scalers['knn'] = pipeline.named_steps['scaler']
-        
-        return results
-    
-    def train_svm(self, X_train, y_train, X_test, y_test):
-        """Train Support Vector Machine model."""
-        print("\nTraining SVM...")
-        
-        # Create pipeline with scaling
-        pipeline = Pipeline([
-            ('scaler', StandardScaler()),
-            ('model', SVC(kernel='rbf', probability=True, random_state=42))
-        ])
-        
-        # Use smaller sample for SVM if dataset is too large (SVM is slow)
-        if len(X_train) > 50000:
-            print("  Using sample of 50,000 for SVM training (SVM is computationally expensive)...")
-            sample_idx = np.random.choice(len(X_train), 50000, replace=False)
-            X_train_sample = X_train[sample_idx]
-            y_train_sample = y_train[sample_idx]
-            pipeline.fit(X_train_sample, y_train_sample)
-        else:
-            pipeline.fit(X_train, y_train)
-        
-        # Predictions
-        y_pred = pipeline.predict(X_test)
-        y_pred_proba = pipeline.predict_proba(X_test)[:, 1]
-        
-        # Evaluation
-        results = self._evaluate_model(y_test, y_pred, y_pred_proba, 'SVM')
-        
-        # Save model and scaler
-        self.models['svm'] = pipeline
-        self.scalers['svm'] = pipeline.named_steps['scaler']
         
         return results
     
@@ -239,6 +192,9 @@ class ModelTrainer:
     
     def train_neural_network(self, X_train, y_train, X_test, y_test):
         """Train Neural Network using TensorFlow/Keras."""
+        if not _ensure_tensorflow():
+            print("\n[SKIP] Neural Network training skipped — TensorFlow not available.")
+            return None
         print("\nTraining Neural Network on CPU...")
         
         # Scale features for neural network
@@ -337,8 +293,6 @@ class ModelTrainer:
         
         training_map = {
             'logistic_regression': self.train_logistic_regression,
-            'knn': self.train_knn,
-            'svm': self.train_svm,
             'random_forest': self.train_random_forest,
             'xgboost': self.train_xgboost,
             'neural_network': self.train_neural_network
@@ -453,8 +407,6 @@ class ModelTrainer:
         # Load scikit-learn models
         model_files = {
             'logistic_regression': 'logistic_regression.pkl',
-            'knn': 'knn.pkl',
-            'svm': 'svm.pkl',
             'random_forest': 'random_forest.pkl',
             'xgboost': 'xgboost.pkl'
         }
@@ -469,18 +421,19 @@ class ModelTrainer:
         # Load neural network
         nn_path = os.path.join(self.models_dir, 'neural_network.h5')
         if os.path.exists(nn_path):
-            try:
-                self.models['neural_network'] = keras.models.load_model(nn_path)
-                print(f"  [OK] Loaded: neural_network")
-            except (TypeError, ValueError) as e:
-                print(f"  [WARN] Could not load neural_network (Keras version mismatch): {e}")
-                print(f"         Re-train the neural network (Option 2) to fix this.")
+            if not _ensure_tensorflow():
+                print(f"  [SKIP] neural_network not loaded — TensorFlow not available.")
+            else:
+                try:
+                    self.models['neural_network'] = keras.models.load_model(nn_path)
+                    print(f"  [OK] Loaded: neural_network")
+                except (TypeError, ValueError) as e:
+                    print(f"  [WARN] Could not load neural_network (Keras version mismatch): {e}")
+                    print(f"         Re-train the neural network (Option 2) to fix this.")
         
         # Load scalers
         scaler_files = {
             'logistic_regression': 'logistic_regression_scaler.pkl',
-            'knn': 'knn_scaler.pkl',
-            'svm': 'svm_scaler.pkl',
             'neural_network': 'neural_network_scaler.pkl'
         }
         
