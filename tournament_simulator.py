@@ -387,7 +387,8 @@ class TournamentSimulator:
                     
                     if show_details and match_res['predictions']:
                         # predictor.display_predictions takes names
-                        self.predictor.display_predictions(match_res['predictions'], p1_info['name'], p2_info['name'])
+                        sets_to_play = 5 if tourney_level == 'G' else 3
+                        self.predictor.display_predictions(match_res['predictions'], p1_info['name'], p2_info['name'], sets_to_play=sets_to_play)
                         print(f"\nResult: {match_res['winner']['name']} wins {match_res['score']}")
                     
                     match_res.update({'player1': p1_info, 'player2': p2_info})

@@ -38,13 +38,15 @@ def compute_symmetric_features(df):
     Process matches in date order and compute features from the perspective of Player A and Player B.
     Player A and Player B are assigned randomly per row to ensure symmetry.
     """
+    from elo_calculator import K_FACTORS, INITIAL_RATING, SURFACE_K_MULTIPLIER
+
     print("  Processing symmetric features (temporal sequential pass)...")
-    
+
     # Sort by date
     df = df.copy()
     df['tourney_date'] = pd.to_datetime(df['tourney_date'], format='%Y%m%d', errors='coerce')
     df = df.sort_values('tourney_date').reset_index(drop=True)
-    
+
     # Tracking dictionaries for historical stats
     history = {
         'wins': {},            # player -> total wins
@@ -54,6 +56,10 @@ def compute_symmetric_features(df):
         'recent': {},          # player -> list of last 20 results (1=win, 0=loss)
         'h2h': {},             # (player1, player2) -> wins for player1
     }
+
+    # ELO state — tracked inline to maintain temporal integrity (no lookahead)
+    elo_ratings = {}          # player -> float
+    surface_elo_ratings = {}  # (player, surface) -> float
     
     processed_rows = []
     
@@ -117,7 +123,13 @@ def compute_symmetric_features(df):
         h2h_2 = history['h2h'].get((p2, p1), 0)
         h2h_total = h2h_1 + h2h_2
         h2h_adv = h2h_1 / h2h_total if h2h_total > 0 else 0.5
-        
+
+        # --- 3b. ELO ratings (pre-match) ---
+        p1_elo = elo_ratings.get(p1, INITIAL_RATING)
+        p2_elo = elo_ratings.get(p2, INITIAL_RATING)
+        p1_surf_elo = surface_elo_ratings.get((p1, surface), INITIAL_RATING)
+        p2_surf_elo = surface_elo_ratings.get((p2, surface), INITIAL_RATING)
+
         # --- 4. Assemble Feature Row ---
         feat_row = {
             'target': target,
@@ -139,6 +151,9 @@ def compute_symmetric_features(df):
             'round': row['round'],
             'p1_hand': 1 if p1_hand == 'L' else 0,
             'p2_hand': 1 if p2_hand == 'L' else 0,
+            # ELO features
+            'elo_diff': p1_elo - p2_elo,
+            'surface_elo_diff': p1_surf_elo - p2_surf_elo,
             # Metadata for splitting
             'tourney_date': row['tourney_date'],
             # Filter criteria
@@ -164,7 +179,26 @@ def compute_symmetric_features(df):
         history['recent'][l_name] = l_rec[-20:]
         
         history['h2h'][(w_name, l_name)] = history['h2h'].get((w_name, l_name), 0) + 1
-        
+
+        # --- 6. Update ELO state ---
+        level = row.get('tourney_level', 'A')
+        if pd.isna(level) or level not in K_FACTORS:
+            level = 'A'
+
+        k_overall = K_FACTORS[level]
+        r_w = elo_ratings.get(w_name, INITIAL_RATING)
+        r_l = elo_ratings.get(l_name, INITIAL_RATING)
+        exp_w = 1.0 / (1.0 + 10.0 ** ((r_l - r_w) / 400.0))
+        elo_ratings[w_name] = r_w + k_overall * (1.0 - exp_w)
+        elo_ratings[l_name] = r_l + k_overall * (0.0 - (1.0 - exp_w))
+
+        k_surf = k_overall * SURFACE_K_MULTIPLIER
+        r_ws = surface_elo_ratings.get((w_name, surface), INITIAL_RATING)
+        r_ls = surface_elo_ratings.get((l_name, surface), INITIAL_RATING)
+        exp_ws = 1.0 / (1.0 + 10.0 ** ((r_ls - r_ws) / 400.0))
+        surface_elo_ratings[(w_name, surface)] = r_ws + k_surf * (1.0 - exp_ws)
+        surface_elo_ratings[(l_name, surface)] = r_ls + k_surf * (0.0 - (1.0 - exp_ws))
+
     return pd.DataFrame(processed_rows)
 
 def prepare_features_for_training(df, min_matches=5):
@@ -191,7 +225,8 @@ def prepare_features_for_training(df, min_matches=5):
     feature_cols = [
         'rank_diff', 'pts_diff', 'age_diff', 'ht_diff', 'seed_diff',
         'win_rate_diff', 'surface_wr_diff', 'form_diff', 'experience_diff', 'h2h_adv',
-        'surface_enc', 'level_enc', 'round_enc', 'p1_hand', 'p2_hand'
+        'surface_enc', 'level_enc', 'round_enc', 'p1_hand', 'p2_hand',
+        'elo_diff', 'surface_elo_diff',
     ]
     
     X = df_feats[feature_cols].values
@@ -241,7 +276,13 @@ def create_basic_features(df):
         df_features['form_diff'] = df_features['w_recent_form'] - df_features['l_recent_form']
         df_features['experience_diff'] = np.log1p(df_features['w_total_matches']) - np.log1p(df_features['l_total_matches'])
         df_features['h2h_adv'] = df_features['h2h_w_advantage']
-        
+
+    # ELO diffs (present only when predictor has ELO loaded)
+    if 'p1_elo' in df_features.columns and 'p2_elo' in df_features.columns:
+        df_features['elo_diff'] = df_features['p1_elo'] - df_features['p2_elo']
+    if 'p1_surf_elo' in df_features.columns and 'p2_surf_elo' in df_features.columns:
+        df_features['surface_elo_diff'] = df_features['p1_surf_elo'] - df_features['p2_surf_elo']
+
     return df_features
 
 

@@ -1064,10 +1064,14 @@ HTML_CONTENT = """
                 return `<div class="player-row bye"><div class="name">BYE</div></div>`;
             }
             const winClass = isWinner ? 'winner' : '';
+            const eloBadge = player.elo
+                ? `<span style="font-size:10px;color:#888;background:#f0f0f0;padding:2px 5px;border-radius:3px;white-space:nowrap;">ELO ${player.elo}</span>`
+                : '';
             return `
                 <div class="player-row ${winClass}">
                     <div class="name">${player.name}</div>
-                    <div style="display:flex; align-items:center; gap:10px;">
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        ${eloBadge}
                         ${scoreStr ? `<div class="score">${scoreStr}</div>` : ''}
                         ${player.seed ? `<div class="seed">${player.seed}</div>` : ''}
                     </div>
@@ -1125,14 +1129,32 @@ class Api:
             print(f"  Simulating {setup['name']} with {len(players)} entered players...")
             sim = TournamentSimulator()
             results = sim.simulate_tournament(
-                players, 
+                players,
                 surface=setup["surface"],
                 tourney_level=setup["level"],
-                use_model="average", 
+                use_model="average",
                 draw_size=setup["draw_size"],
-                show_details=False, 
+                show_details=False,
                 silent=True
             )
+
+            # Attach ELO ratings to every player dict in the results so the GUI can show badges
+            surface = setup.get("surface")
+            if sim.predictor._elo_loaded:
+                def attach_elo(obj):
+                    if isinstance(obj, dict):
+                        name = obj.get('name')
+                        if name and name != 'BYE' and 'seed' in obj and 'elo' not in obj:
+                            obj['elo'] = round(sim.predictor.elo_calculator.get_rating(name))
+                            if surface:
+                                obj['surf_elo'] = round(sim.predictor.elo_calculator.get_surface_rating(name, surface))
+                        for v in obj.values():
+                            attach_elo(v)
+                    elif isinstance(obj, list):
+                        for item in obj:
+                            attach_elo(item)
+                attach_elo(results)
+
             def clean_dict(d):
                 if isinstance(d, dict):
                     return {k: clean_dict(v) for k, v in d.items()}

@@ -2,6 +2,7 @@
 Match prediction module for tennis tournament predictor.
 Uses trained models to predict match outcomes.
 """
+import os
 import pandas as pd
 import numpy as np
 from model_trainer import ModelTrainer
@@ -12,12 +13,15 @@ warnings.filterwarnings('ignore')
 
 class MatchPredictor:
     """Class to predict match outcomes using trained models."""
-    
+
     def __init__(self, models_dir='models'):
         self.trainer = ModelTrainer(models_dir)
         self.trainer.load_models()
         self.feature_names = self.trainer.feature_names
         self.encoders = {}
+        from elo_calculator import ELOCalculator
+        self.elo_calculator = ELOCalculator(cache_path=os.path.join(models_dir, 'elo_ratings.json'))
+        self._elo_loaded = False
     
     def _build_feature_vector(self, player1_data, player2_data, surface, tourney_level):
         """
@@ -60,11 +64,21 @@ class MatchPredictor:
             'h2h_w_advantage': p1.get('h2h_advantage', 0.5),
         }
         
+        # Inject ELO diffs for retrained models (ignored by old 15-feature models)
+        if self._elo_loaded:
+            p1_name = p1.get('name', '')
+            p2_name = p2.get('name', '')
+            match_data['p1_elo'] = self.elo_calculator.get_rating(p1_name)
+            match_data['p2_elo'] = self.elo_calculator.get_rating(p2_name)
+            if surface:
+                match_data['p1_surf_elo'] = self.elo_calculator.get_surface_rating(p1_name, surface)
+                match_data['p2_surf_elo'] = self.elo_calculator.get_surface_rating(p2_name, surface)
+
         df = pd.DataFrame([match_data])
-        
+
         # Handle missing values
         df = handle_missing_values(df)
-        
+
         # Create basic features (differences, ratios)
         df = create_basic_features(df)
         
@@ -117,9 +131,15 @@ class MatchPredictor:
                 print(f"Warning: Could not get prediction from {model_name}: {e}")
                 continue
         
+        # Add ELO prediction to ensemble
+        if self._elo_loaded:
+            predictions['elo'] = self.elo_calculator.predict_winner(
+                player1_name, player2_name, surface
+            )
+
         # Add metadata for display
         predictions['_tourney_level'] = tourney_level if tourney_level else 'M'
-        
+
         return predictions
     
     def predict_from_names(self, player1_name, player2_name, df_historical=None, surface=None, tourney_level=None, 
@@ -198,6 +218,15 @@ class MatchPredictor:
         player1_data['h2h_advantage'] = h2h['p1_advantage']
         player2_data['h2h_advantage'] = 1.0 - h2h['p1_advantage']
         
+        # Load ELO ratings on first prediction (uses the same df already in memory)
+        if not self._elo_loaded:
+            self.elo_calculator.get_or_compute(df_historical)
+            self._elo_loaded = True
+
+        # Attach names so _build_feature_vector can look up ELO diffs
+        player1_data['name'] = player1_name
+        player2_data['name'] = player2_name
+
         predictions = self.predict_match(
             player1_data, player2_data, surface, tourney_level,
             player1_name, player2_name
@@ -501,14 +530,15 @@ class MatchPredictor:
         full_score = " ".join(score_parts)
         return full_score
 
-    def display_predictions(self, predictions, player1_name="Player 1", player2_name="Player 2", sets_to_play=3):
+    def display_predictions(self, predictions, player1_name="Player 1", player2_name="Player 2", sets_to_play=None):
         """Display predictions in a formatted way with player stats."""
         # Use .get() to avoid mutating the caller's dict
         player1_stats = predictions.get('_player1_stats', None)
         player2_stats = predictions.get('_player2_stats', None)
         h2h = predictions.get('_h2h', None)
-        # tourney_level is no longer used for score simulation here as sets_to_play is provided
         tourney_level = predictions.get('_tourney_level', 'M')
+        if sets_to_play is None:
+            sets_to_play = 5 if tourney_level == 'G' else 3
 
 
         
