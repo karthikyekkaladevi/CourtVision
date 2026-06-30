@@ -81,7 +81,7 @@ def print_menu():
     print("\n" + "="*60)
     print("COURTVISION")
     print("="*60)
-    print("1. Predict match winner")
+    print("1. Predict H2H winner")
     print("2. Simulate tournament")
     print("3. View model performance")
     print("4. Exit")
@@ -93,7 +93,7 @@ def print_menu():
 def option_1_predict():
     """Predict match winner."""
     print('\033[2J\033[3J\033[H', end='', flush=True)
-    print("\n[1] Predict match winner")
+    print("\n[1] Predict H2H winner")
 
     try:
         if not os.path.exists('models') or len(os.listdir('models')) == 0:
