@@ -21,8 +21,6 @@ except ImportError:
 
 # Scikit-learn models
 from sklearn.linear_model import LogisticRegression
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -90,72 +88,6 @@ class ModelTrainer:
         # Save model and scaler
         self.models['logistic_regression'] = pipeline
         self.scalers['logistic_regression'] = pipeline.named_steps['scaler']
-        
-        return results
-    
-    def train_knn(self, X_train, y_train, X_test, y_test):
-        """Train K-Nearest Neighbors model."""
-        print("\nTraining KNN...")
-        
-        # Create pipeline with scaling
-        pipeline = Pipeline([
-            ('scaler', StandardScaler()),
-            ('model', KNeighborsClassifier(n_neighbors=5))
-        ])
-        
-        # Use smaller sample for KNN if dataset is too large (KNN prediction is very slow)
-        if len(X_train) > 50000:
-            print(f"  Using sample of 50,000 for KNN training (Dataset size: {len(X_train):,})...")
-            sample_idx = np.random.choice(len(X_train), 50000, replace=False)
-            X_train_sample = X_train[sample_idx]
-            y_train_sample = y_train[sample_idx]
-            pipeline.fit(X_train_sample, y_train_sample)
-        else:
-            pipeline.fit(X_train, y_train)
-        
-        # Predictions
-        y_pred = pipeline.predict(X_test)
-        y_pred_proba = pipeline.predict_proba(X_test)[:, 1]
-        
-        # Evaluation
-        results = self._evaluate_model(y_test, y_pred, y_pred_proba, 'KNN')
-        
-        # Save model and scaler
-        self.models['knn'] = pipeline
-        self.scalers['knn'] = pipeline.named_steps['scaler']
-        
-        return results
-    
-    def train_svm(self, X_train, y_train, X_test, y_test):
-        """Train Support Vector Machine model."""
-        print("\nTraining SVM...")
-        
-        # Create pipeline with scaling
-        pipeline = Pipeline([
-            ('scaler', StandardScaler()),
-            ('model', SVC(kernel='rbf', probability=True, random_state=42))
-        ])
-        
-        # Use smaller sample for SVM if dataset is too large (SVM is slow)
-        if len(X_train) > 50000:
-            print("  Using sample of 50,000 for SVM training (SVM is computationally expensive)...")
-            sample_idx = np.random.choice(len(X_train), 50000, replace=False)
-            X_train_sample = X_train[sample_idx]
-            y_train_sample = y_train[sample_idx]
-            pipeline.fit(X_train_sample, y_train_sample)
-        else:
-            pipeline.fit(X_train, y_train)
-        
-        # Predictions
-        y_pred = pipeline.predict(X_test)
-        y_pred_proba = pipeline.predict_proba(X_test)[:, 1]
-        
-        # Evaluation
-        results = self._evaluate_model(y_test, y_pred, y_pred_proba, 'SVM')
-        
-        # Save model and scaler
-        self.models['svm'] = pipeline
-        self.scalers['svm'] = pipeline.named_steps['scaler']
         
         return results
     
@@ -320,10 +252,10 @@ class ModelTrainer:
         
         return results
     
-    def train_all_models(self, X_train, y_train, X_test, y_test, feature_names, selected_keys=None):
+    def train_all_models(self, X_train, y_train, X_test, y_test, feature_names, selected_keys=None, encoders=None):
         """
         Train specific or all models.
-        
+
         Args:
             X_train: Training features
             y_train: Training targets
@@ -332,26 +264,29 @@ class ModelTrainer:
             feature_names: List of feature names
             selected_keys: List of model keys to train (e.g., ['xgboost', 'random_forest']).
                           If None, trains all models.
+            encoders: Dict of fitted LabelEncoders from feature engineering.
         """
         self.feature_names = feature_names
+        if encoders:
+            self.encoders = encoders
         
         training_map = {
             'logistic_regression': self.train_logistic_regression,
-            'knn': self.train_knn,
-            'svm': self.train_svm,
             'random_forest': self.train_random_forest,
             'xgboost': self.train_xgboost,
             'neural_network': self.train_neural_network
         }
         
-        # If selected_keys is provided, filter the training_map
+        # Default: train logistic_regression, xgboost, and neural_network
+        default_keys = ['logistic_regression', 'xgboost', 'neural_network']
+
         if selected_keys:
             keys_to_train = [k for k in selected_keys if k in training_map]
             if not keys_to_train:
-                print("\n[WARNING] No valid models selected. Defaulting to all models.")
-                keys_to_train = list(training_map.keys())
+                print("\n[WARNING] No valid models selected. Defaulting to standard models.")
+                keys_to_train = default_keys
         else:
-            keys_to_train = list(training_map.keys())
+            keys_to_train = default_keys
             
         print("\n" + "="*60)
         print(f"TRAINING {len(keys_to_train)} MODEL(S)")
@@ -445,27 +380,31 @@ class ModelTrainer:
         with open(feature_names_path, 'wb') as f:
             pickle.dump(self.feature_names, f)
         print(f"  [OK] Saved: {feature_names_path}")
+
+        # Save encoders
+        if self.encoders:
+            encoders_path = os.path.join(self.models_dir, 'encoders.pkl')
+            with open(encoders_path, 'wb') as f:
+                pickle.dump(self.encoders, f)
+            print(f"  [OK] Saved: {encoders_path}")
     
     def load_models(self):
         """Load previously trained models."""
         print("Loading models...")
         
-        # Load scikit-learn models
+        # Load models
         model_files = {
             'logistic_regression': 'logistic_regression.pkl',
-            'knn': 'knn.pkl',
-            'svm': 'svm.pkl',
-            'random_forest': 'random_forest.pkl',
-            'xgboost': 'xgboost.pkl'
+            'xgboost': 'xgboost.pkl',
         }
-        
+
         for name, filename in model_files.items():
             model_path = os.path.join(self.models_dir, filename)
             if os.path.exists(model_path):
                 with open(model_path, 'rb') as f:
                     self.models[name] = pickle.load(f)
                 print(f"  [OK] Loaded: {name}")
-        
+
         # Load neural network
         nn_path = os.path.join(self.models_dir, 'neural_network.h5')
         if os.path.exists(nn_path):
@@ -474,14 +413,12 @@ class ModelTrainer:
                 print(f"  [OK] Loaded: neural_network")
             except (TypeError, ValueError) as e:
                 print(f"  [WARN] Could not load neural_network (Keras version mismatch): {e}")
-                print(f"         Re-train the neural network (Option 2) to fix this.")
-        
+                print(f"         Re-train the neural network to fix this.")
+
         # Load scalers
         scaler_files = {
             'logistic_regression': 'logistic_regression_scaler.pkl',
-            'knn': 'knn_scaler.pkl',
-            'svm': 'svm_scaler.pkl',
-            'neural_network': 'neural_network_scaler.pkl'
+            'neural_network': 'neural_network_scaler.pkl',
         }
         
         for name, filename in scaler_files.items():
@@ -501,6 +438,12 @@ class ModelTrainer:
         if os.path.exists(feature_names_path):
             with open(feature_names_path, 'rb') as f:
                 self.feature_names = pickle.load(f)
+
+        # Load encoders
+        encoders_path = os.path.join(self.models_dir, 'encoders.pkl')
+        if os.path.exists(encoders_path):
+            with open(encoders_path, 'rb') as f:
+                self.encoders = pickle.load(f)
 
 
 if __name__ == "__main__":
@@ -524,4 +467,4 @@ if __name__ == "__main__":
     
     # Train models
     trainer = ModelTrainer()
-    trainer.train_all_models(X_train, y_train, X_test, y_test, feature_names)
+    trainer.train_all_models(X_train, y_train, X_test, y_test, feature_names, encoders=encoders)

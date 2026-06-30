@@ -1,4 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environment
 .venv/
-models/*.pkl
-backups/
+
+# Models (train your own)
+models/
+
+# macOS
+.DS_Store
 *.dylib
+
+# VS Code
+.vscode/
+
+# Misc
+backups/
+*.log

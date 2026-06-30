@@ -239,14 +239,25 @@ class TournamentSimulator:
         avg_prob = np.mean([p['probability'] for k, p in predictions.items() if not k.startswith('_')])
         
         # Decide winner
+        # In fast_mode (Monte Carlo), use probabilistic outcome so results vary
+        # In normal mode, use deterministic (higher prob wins)
         if use_model == 'average':
-            is_p1_winner = avg_prob >= 0.5
+            if fast_mode:
+                is_p1_winner = np.random.random() < avg_prob
+            else:
+                is_p1_winner = avg_prob >= 0.5
         else:
             if use_model in predictions:
                 prob = predictions[use_model]['probability']
-                is_p1_winner = prob >= 0.5
+                if fast_mode:
+                    is_p1_winner = np.random.random() < prob
+                else:
+                    is_p1_winner = prob >= 0.5
             else:
-                is_p1_winner = avg_prob >= 0.5
+                if fast_mode:
+                    is_p1_winner = np.random.random() < avg_prob
+                else:
+                    is_p1_winner = avg_prob >= 0.5
         
         winner_info = p1_info if is_p1_winner else p2_info
         loser_info = p2_info if is_p1_winner else p1_info
@@ -690,27 +701,31 @@ class TournamentSimulator:
             
         # Reset cache for this fresh MC run
         self._matchup_cache = {}
-        
+
+        all_results = []
+
         for _ in pbar:
             res = self.simulate_tournament(
-                players, surface=surface, tourney_level=tourney_level, 
-                use_model=use_model, draw_size=draw_size, 
+                players, surface=surface, tourney_level=tourney_level,
+                use_model=use_model, draw_size=draw_size,
                 show_details=False, silent=True, fast_mode=True
             )
-            
+
+            all_results.append(res)
+
             champion = res['champion']
             win_counts[champion] = win_counts.get(champion, 0) + 1
-            
+
             runner_up = res['runner_up']
             if runner_up:
                 runner_up_counts[runner_up] = runner_up_counts.get(runner_up, 0) + 1
-                
+
             for sf in res['semi_finalists']:
                 semi_counts[sf['name']] = semi_counts.get(sf['name'], 0) + 1
-        
+
         # Calculate probabilities
         probabilities = []
-        
+
         # Include ALL players who were in the tournament
         participating_names = []
         for p in players:
@@ -726,11 +741,40 @@ class TournamentSimulator:
                 'final_prob': (win_counts.get(name, 0) + runner_up_counts.get(name, 0)) / iterations,
                 'semi_prob': semi_counts.get(name, 0) / iterations
             })
-            
-        # Sort by win probability
+
+        # Score each simulation by how well it matches aggregate probabilities
+        # Higher score = more statistically representative result
+        prob_lookup = {p['name']: p for p in probabilities}
+
+        best_score = -1
+        best_result = all_results[0]
+
+        for res in all_results:
+            score = 0.0
+            # Champion: weight by win probability (most important)
+            champ = res['champion']
+            if champ in prob_lookup:
+                score += prob_lookup[champ]['win_prob'] * 3.0
+
+            # Runner-up: weight by final appearance probability
+            ru = res['runner_up']
+            if ru and ru in prob_lookup:
+                score += prob_lookup[ru]['final_prob'] * 2.0
+
+            # Semi-finalists: weight by semi probability
+            for sf in res.get('semi_finalists', []):
+                name = sf['name'] if isinstance(sf, dict) else sf
+                if name in prob_lookup:
+                    score += prob_lookup[name]['semi_prob'] * 1.0
+
+            if score > best_score:
+                best_score = score
+                best_result = res
+
         return {
             'iterations': iterations,
-            'probabilities': probabilities
+            'probabilities': probabilities,
+            'best_result': best_result
         }
 
     def display_forecast_dashboard(self, mc_results):

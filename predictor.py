@@ -2,85 +2,136 @@
 Match prediction module for tennis tournament predictor.
 Uses trained models to predict match outcomes.
 """
+import os
 import pandas as pd
 import numpy as np
 from model_trainer import ModelTrainer
-from feature_engineering import handle_missing_values, create_basic_features, encode_categorical_features
+from feature_engineering import handle_missing_values
+from elo_calculator import ELOCalculator
 import warnings
 warnings.filterwarnings('ignore')
 
 
 class MatchPredictor:
     """Class to predict match outcomes using trained models."""
-    
+
     def __init__(self, models_dir='models'):
         self.trainer = ModelTrainer(models_dir)
         self.trainer.load_models()
         self.feature_names = self.trainer.feature_names
-        self.encoders = {}
+        self.encoders = self.trainer.encoders
+        self.elo_calculator = ELOCalculator(cache_path=os.path.join(models_dir, 'elo_ratings.json'))
+        self._elo_loaded = False
     
     def _build_feature_vector(self, player1_data, player2_data, surface, tourney_level):
         """
-        Build the feature vector directly from player data, matching the training feature schema.
-        
-        This constructs the exact same features used during training:
-        - Rank/points differences and ratios
-        - Historical performance differences (win rate, surface win rate, recent form, h2h)
-        - Categorical encodings
+        Build the feature vector directly from player data.
+        Mirrors compute_symmetric_features() exactly — same formulas, same encoders.
+        Player 1 is always slot A, Player 2 is always slot B (no random flip at prediction time).
         """
         p1 = player1_data
         p2 = player2_data
-        
-        # Create a single-row DataFrame with the raw columns needed
-        match_data = {
-            'winner_rank': p1.get('rank', 9999),
-            'loser_rank': p2.get('rank', 9999),
-            'winner_rank_points': p1.get('rank_points', 0),
-            'loser_rank_points': p2.get('rank_points', 0),
-            'winner_seed': p1.get('seed', 999),
-            'loser_seed': p2.get('seed', 999),
-            'winner_age': p1.get('age', 25),
-            'loser_age': p2.get('age', 25),
-            'winner_ht': p1.get('height', 180),
-            'loser_ht': p2.get('height', 180),
-            'winner_hand': p1.get('hand', 'R'),
-            'loser_hand': p2.get('hand', 'R'),
-            'surface': surface or 'Hard',
-            'tourney_level': tourney_level or 'M',
-            'round': 'F',
-            # Historical features (injected directly, not computed from match)
-            'w_win_rate': p1.get('win_rate', 0.5),
-            'l_win_rate': p2.get('win_rate', 0.5),
-            'w_surface_win_rate': p1.get('surface_win_rate', 0.5),
-            'l_surface_win_rate': p2.get('surface_win_rate', 0.5),
-            'w_recent_form': p1.get('recent_form', 0.5),
-            'l_recent_form': p2.get('recent_form', 0.5),
-            'w_total_matches': p1.get('total_matches', 0),
-            'l_total_matches': p2.get('total_matches', 0),
-            'h2h_w_advantage': p1.get('h2h_advantage', 0.5),
+        surface = surface or 'Hard'
+        tourney_level = tourney_level or 'M'
+
+        p1_rank = p1.get('rank', 999)
+        p2_rank = p2.get('rank', 999)
+        p1_pts = p1.get('rank_points', 0)
+        p2_pts = p2.get('rank_points', 0)
+        p1_age = p1.get('age', 25)
+        p2_age = p2.get('age', 25)
+        p1_ht = p1.get('height', 180)
+        p2_ht = p2.get('height', 180)
+        p1_seed = p1.get('seed', 99)
+        p2_seed = p2.get('seed', 99)
+        p1_hand = p1.get('hand', 'R')
+        p2_hand = p2.get('hand', 'R')
+
+        # --- Diffs (same formulas as compute_symmetric_features) ---
+        rank_diff = p2_rank - p1_rank
+        pts_diff = p1_pts - p2_pts
+        age_diff = p1_age - p2_age
+        seed_diff = p2_seed - p1_seed
+
+        # Height-surface interaction (same multipliers as training)
+        raw_ht_diff = p1_ht - p2_ht
+        surface_ht_multiplier = {'Grass': 1.5, 'Hard': 1.0, 'Clay': 0.5, 'Carpet': 1.2}
+        ht_surface_adv = raw_ht_diff * surface_ht_multiplier.get(surface, 1.0)
+
+        # Performance diffs (raw ratios, NO smoothing — matches training)
+        win_rate_diff = p1.get('win_rate', 0.5) - p2.get('win_rate', 0.5)
+        surface_wr_diff = p1.get('surface_win_rate', 0.5) - p2.get('surface_win_rate', 0.5)
+        form_diff = p1.get('recent_form', 0.5) - p2.get('recent_form', 0.5)
+        experience_diff = np.log1p(p1.get('total_matches', 0)) - np.log1p(p2.get('total_matches', 0))
+        h2h_adv = p1.get('h2h_advantage', 0.5)
+
+        # Handedness (same logic as training)
+        p1_is_lefty = 1 if p1_hand == 'L' else 0
+        p2_is_lefty = 1 if p2_hand == 'L' else 0
+        hand_cross = 1 if p1_is_lefty != p2_is_lefty else 0
+        lefty_adv = (p1_is_lefty - p2_is_lefty) * hand_cross
+
+        # Categorical encoding using the SAME fitted LabelEncoders from training
+        def safe_encode(encoder, value):
+            try:
+                return encoder.transform([value])[0]
+            except ValueError:
+                return 0
+
+        surface_enc = safe_encode(self.encoders['surface'], surface) if 'surface' in self.encoders else 0
+        level_enc = safe_encode(self.encoders['level'], tourney_level) if 'level' in self.encoders else 0
+        round_enc = safe_encode(self.encoders['round'], 'F') if 'round' in self.encoders else 0
+
+        # ELO diffs (injected when ELO is loaded)
+        elo_diff = 0.0
+        surface_elo_diff = 0.0
+        if self._elo_loaded:
+            p1_name = p1.get('name', '')
+            p2_name = p2.get('name', '')
+            p1_elo = self.elo_calculator.get_rating(p1_name)
+            p2_elo = self.elo_calculator.get_rating(p2_name)
+            elo_diff = p1_elo - p2_elo
+            if surface:
+                p1_surf_elo = self.elo_calculator.get_surface_rating(p1_name, surface)
+                p2_surf_elo = self.elo_calculator.get_surface_rating(p2_name, surface)
+                surface_elo_diff = p1_surf_elo - p2_surf_elo
+
+        # Assemble in the exact order of self.feature_names
+        feat_dict = {
+            'rank_diff': rank_diff,
+            'pts_diff': pts_diff,
+            'age_diff': age_diff,
+            'ht_surface_adv': ht_surface_adv,
+            'seed_diff': seed_diff,
+            'win_rate_diff': win_rate_diff,
+            'surface_wr_diff': surface_wr_diff,
+            'form_diff': form_diff,
+            'experience_diff': experience_diff,
+            'h2h_adv': h2h_adv,
+            'surface_enc': surface_enc,
+            'level_enc': level_enc,
+            'round_enc': round_enc,
+            'hand_cross': hand_cross,
+            'lefty_adv': lefty_adv,
+            'elo_diff': elo_diff,
+            'surface_elo_diff': surface_elo_diff,
+            # Serve career average diffs
+            'ace_rate_diff': p1.get('career_ace_rate', 0.0) - p2.get('career_ace_rate', 0.0),
+            'df_rate_diff': p1.get('career_df_rate', 0.0) - p2.get('career_df_rate', 0.0),
+            'first_serve_pct_diff': p1.get('career_1st_serve_pct', 0.5) - p2.get('career_1st_serve_pct', 0.5),
+            'first_serve_win_diff': p1.get('career_1st_serve_win', 0.5) - p2.get('career_1st_serve_win', 0.5),
+            'second_serve_win_diff': p1.get('career_2nd_serve_win', 0.5) - p2.get('career_2nd_serve_win', 0.5),
+            'bp_save_rate_diff': p1.get('career_bp_save_rate', 0.5) - p2.get('career_bp_save_rate', 0.5),
+            # Fatigue diffs
+            'days_since_last_diff': p1.get('days_since_last', 30) - p2.get('days_since_last', 30),
+            'matches_last_30d_diff': p1.get('matches_last_30d', 0) - p2.get('matches_last_30d', 0),
+            # Surface return pressure diff
+            'surface_return_diff': p1.get('career_surface_return_pct', 0.35) - p2.get('career_surface_return_pct', 0.35),
         }
-        
-        df = pd.DataFrame([match_data])
-        
-        # Handle missing values
-        df = handle_missing_values(df)
-        
-        # Create basic features (differences, ratios)
-        df = create_basic_features(df)
-        
-        # Encode categorical features
-        df, _ = encode_categorical_features(df)
-        
-        # Build feature vector in the same order as training
-        feature_vector = np.zeros(len(self.feature_names))
-        for i, feat_name in enumerate(self.feature_names):
-            if feat_name in df.columns:
-                val = df[feat_name].iloc[0]
-                feature_vector[i] = val if pd.notna(val) else 0.0
-        
-        # Safety: replace NaN/inf
+
+        feature_vector = np.array([feat_dict.get(f, 0.0) for f in self.feature_names], dtype=float)
         feature_vector = np.nan_to_num(feature_vector, nan=0.0, posinf=0.0, neginf=0.0)
-        
+
         return feature_vector.reshape(1, -1)
     
     def predict_match(self, player1_data, player2_data, surface=None, tourney_level=None,
@@ -103,8 +154,6 @@ class MatchPredictor:
                         proba = model.predict(X_scaled, verbose=0)[0][0]
                     else:
                         continue
-                elif model_name in ['logistic_regression', 'knn', 'svm']:
-                    proba = model.predict_proba(X)[0][1]
                 else:
                     proba = model.predict_proba(X)[0][1]
                 
@@ -117,9 +166,15 @@ class MatchPredictor:
                 print(f"Warning: Could not get prediction from {model_name}: {e}")
                 continue
         
+        # Add ELO prediction to ensemble
+        if self._elo_loaded:
+            predictions['elo'] = self.elo_calculator.predict_winner(
+                player1_name, player2_name, surface
+            )
+
         # Add metadata for display
         predictions['_tourney_level'] = tourney_level if tourney_level else 'M'
-        
+
         return predictions
     
     def predict_from_names(self, player1_name, player2_name, df_historical=None, surface=None, tourney_level=None, 
@@ -198,11 +253,20 @@ class MatchPredictor:
         player1_data['h2h_advantage'] = h2h['p1_advantage']
         player2_data['h2h_advantage'] = 1.0 - h2h['p1_advantage']
         
+        # Load ELO ratings on first prediction (uses the same df already in memory)
+        if not self._elo_loaded:
+            self.elo_calculator.get_or_compute(df_historical)
+            self._elo_loaded = True
+
+        # Attach names so _build_feature_vector can look up ELO diffs
+        player1_data['name'] = player1_name
+        player2_data['name'] = player2_name
+
         predictions = self.predict_match(
             player1_data, player2_data, surface, tourney_level,
             player1_name, player2_name
         )
-        
+
         # Attach stats for display
         if predictions:
             predictions['_player1_stats'] = player1_data
@@ -247,7 +311,13 @@ class MatchPredictor:
                 'first_serve_pct': 66.7, 'first_serve_win_pct': 75.0,
                 'second_serve_win_pct': 50.0, 'bp_save_pct': 66.7,
                 'found_in_data': False, 'wins': 0, 'losses': 0,
-                'surface_preference': 'None', 'best_surface_win_rate': 0.0 # Default
+                'surface_preference': 'None', 'best_surface_win_rate': 0.0,
+                # Career serve rates (for ML features)
+                'career_ace_rate': 0.0, 'career_df_rate': 0.0,
+                'career_1st_serve_pct': 0.5, 'career_1st_serve_win': 0.5,
+                'career_2nd_serve_win': 0.5, 'career_bp_save_rate': 0.5,
+                # Fatigue
+                'days_since_last': 30, 'matches_last_30d': 0,
             }
         
         # Get most recent match for rank/age/height/hand
@@ -276,9 +346,8 @@ class MatchPredictor:
             height = latest_match.get('loser_ht', 180)
             hand = latest_match.get('loser_hand', 'R')
         
-        # Overall win rate with Laplacian smoothing (pseudo-counts)
-        # Add 2 wins and 2 losses to stabilize small samples
-        win_rate = (total_wins + 2) / (total_matches + 4)
+        # Overall win rate (raw ratio, matches training computation)
+        win_rate = total_wins / total_matches if total_matches > 0 else 0.5
         
         # Surface-specific win rate
         if surface:
@@ -286,14 +355,8 @@ class MatchPredictor:
             surface_losses = len(loser_matches[loser_matches['surface'] == surface])
             surface_total = surface_wins + surface_losses
             # Blend surface win rate with overall win rate
-            if surface_total > 5:
-                # Use surface stats directly if decent sample
-                surface_win_rate = (surface_wins + 1) / (surface_total + 2)
-            else:
-                # Weighted average: more overall win rate if low surface sample
-                weight = surface_total / 5.0
-                raw_swr = surface_wins / surface_total if surface_total > 0 else win_rate
-                surface_win_rate = (weight * raw_swr) + ((1 - weight) * win_rate)
+            # Raw ratio, matches training computation
+            surface_win_rate = surface_wins / surface_total if surface_total > 0 else 0.5
         else:
             surface_win_rate = win_rate
             
@@ -333,8 +396,8 @@ class MatchPredictor:
             recent_matches = all_matches.tail(recent_n)
         
         recent_wins = len(recent_matches[recent_matches['winner_name'] == player_name])
-        # Smoothing for recent form too (pseudo-counts)
-        recent_form = (recent_wins + 1) / (len(recent_matches) + 2) if len(recent_matches) > 0 else 0.5
+        # Raw ratio, matches training computation
+        recent_form = recent_wins / len(recent_matches) if len(recent_matches) > 0 else 0.5
         
         # Compute average match stats (for display)
         w_stats = winner_matches.tail(recent_n)
@@ -377,7 +440,89 @@ class MatchPredictor:
         second_serve_pts = service_points - first_serve_in
         second_serve_win_pct = (second_serve_won / second_serve_pts * 100) if second_serve_pts > 0 else 0
         bp_save_pct = (bp_saved / bp_faced * 100) if bp_faced > 0 else 0
-        
+
+        # --- Career-wide serve stats (for ML features, cumulative across ALL matches) ---
+        def safe_sum(series_w, series_l):
+            all_vals = pd.concat([series_w, series_l]).dropna()
+            return float(all_vals.sum()) if len(all_vals) > 0 else 0.0
+
+        career_svpt = safe_sum(
+            winner_matches['w_svpt'] if 'w_svpt' in winner_matches.columns else pd.Series(),
+            loser_matches['l_svpt'] if 'l_svpt' in loser_matches.columns else pd.Series())
+        career_aces = safe_sum(
+            winner_matches['w_ace'] if 'w_ace' in winner_matches.columns else pd.Series(),
+            loser_matches['l_ace'] if 'l_ace' in loser_matches.columns else pd.Series())
+        career_dfs = safe_sum(
+            winner_matches['w_df'] if 'w_df' in winner_matches.columns else pd.Series(),
+            loser_matches['l_df'] if 'l_df' in loser_matches.columns else pd.Series())
+        career_1stIn = safe_sum(
+            winner_matches['w_1stIn'] if 'w_1stIn' in winner_matches.columns else pd.Series(),
+            loser_matches['l_1stIn'] if 'l_1stIn' in loser_matches.columns else pd.Series())
+        career_1stWon = safe_sum(
+            winner_matches['w_1stWon'] if 'w_1stWon' in winner_matches.columns else pd.Series(),
+            loser_matches['l_1stWon'] if 'l_1stWon' in loser_matches.columns else pd.Series())
+        career_2ndWon = safe_sum(
+            winner_matches['w_2ndWon'] if 'w_2ndWon' in winner_matches.columns else pd.Series(),
+            loser_matches['l_2ndWon'] if 'l_2ndWon' in loser_matches.columns else pd.Series())
+        career_bpSaved = safe_sum(
+            winner_matches['w_bpSaved'] if 'w_bpSaved' in winner_matches.columns else pd.Series(),
+            loser_matches['l_bpSaved'] if 'l_bpSaved' in loser_matches.columns else pd.Series())
+        career_bpFaced = safe_sum(
+            winner_matches['w_bpFaced'] if 'w_bpFaced' in winner_matches.columns else pd.Series(),
+            loser_matches['l_bpFaced'] if 'l_bpFaced' in loser_matches.columns else pd.Series())
+
+        career_2nd_denom = career_svpt - career_1stIn
+
+        # --- Fatigue metrics ---
+        if 'tourney_date' in all_matches.columns and len(all_matches) > 0:
+            latest_date = all_matches.iloc[0]['tourney_date']
+            if pd.notna(latest_date):
+                days_rest = min((pd.Timestamp.now() - latest_date).days, 180)
+                cutoff_30d = latest_date - pd.Timedelta(days=30)
+                matches_30d = len(all_matches[all_matches['tourney_date'] >= cutoff_30d])
+            else:
+                days_rest = 30
+                matches_30d = 0
+        else:
+            days_rest = 30
+            matches_30d = 0
+
+        # --- Surface-specific return pressure ---
+        # Return points won = opponent's serve points - opponent's 1stWon - opponent's 2ndWon
+        # When this player won: opponent stats are l_svpt, l_1stWon, l_2ndWon
+        # When this player lost: opponent stats are w_svpt, w_1stWon, w_2ndWon
+        if surface:
+            surf_wins = winner_matches[winner_matches['surface'] == surface]
+            surf_losses = loser_matches[loser_matches['surface'] == surface]
+        else:
+            surf_wins = winner_matches
+            surf_losses = loser_matches
+
+        ret_svpt_total = 0.0
+        ret_won_total = 0.0
+
+        # From matches this player won: return stats from loser's serve
+        for col_svpt, col_1w, col_2w in [('l_svpt', 'l_1stWon', 'l_2ndWon')]:
+            if col_svpt in surf_wins.columns:
+                mask = surf_wins[col_svpt].notna() & surf_wins[col_1w].notna() & surf_wins[col_2w].notna()
+                valid = surf_wins[mask]
+                svpt = valid[col_svpt].astype(float).sum()
+                won = svpt - valid[col_1w].astype(float).sum() - valid[col_2w].astype(float).sum()
+                ret_svpt_total += svpt
+                ret_won_total += won
+
+        # From matches this player lost: return stats from winner's serve
+        for col_svpt, col_1w, col_2w in [('w_svpt', 'w_1stWon', 'w_2ndWon')]:
+            if col_svpt in surf_losses.columns:
+                mask = surf_losses[col_svpt].notna() & surf_losses[col_1w].notna() & surf_losses[col_2w].notna()
+                valid = surf_losses[mask]
+                svpt = valid[col_svpt].astype(float).sum()
+                won = svpt - valid[col_1w].astype(float).sum() - valid[col_2w].astype(float).sum()
+                ret_svpt_total += svpt
+                ret_won_total += won
+
+        career_surface_return_pct = ret_won_total / ret_svpt_total if ret_svpt_total > 0 else 0.35
+
         return {
             'rank': rank if pd.notna(rank) else 9999,
             'rank_points': rank_points if pd.notna(rank_points) else 0,
@@ -408,6 +553,18 @@ class MatchPredictor:
             'losses': total_losses,
             'surface_preference': best_surface,
             'best_surface_win_rate': round(best_wr, 4),
+            # Career serve rates (for ML features)
+            'career_ace_rate': career_aces / career_svpt if career_svpt > 0 else 0.0,
+            'career_df_rate': career_dfs / career_svpt if career_svpt > 0 else 0.0,
+            'career_1st_serve_pct': career_1stIn / career_svpt if career_svpt > 0 else 0.5,
+            'career_1st_serve_win': career_1stWon / career_1stIn if career_1stIn > 0 else 0.5,
+            'career_2nd_serve_win': career_2ndWon / career_2nd_denom if career_2nd_denom > 0 else 0.5,
+            'career_bp_save_rate': career_bpSaved / career_bpFaced if career_bpFaced > 0 else 0.5,
+            # Fatigue
+            'days_since_last': days_rest,
+            'matches_last_30d': matches_30d,
+            # Surface return pressure
+            'career_surface_return_pct': career_surface_return_pct,
         }
 
     def simulate_score(self, winner_name, loser_name, winner_prob, sets_to_play, p1_stats, p2_stats):
@@ -416,90 +573,223 @@ class MatchPredictor:
         """
         return self._simulate_score(winner_name, loser_name, winner_prob, sets_to_play, p1_stats, p2_stats)
     
+    def _get_serve_point_prob(self, stats):
+        """
+        Compute probability of winning a point on serve from career serve stats.
+        P(win serve point) = (1st_serve_pct × 1st_serve_win_pct) + ((1 - 1st_serve_pct) × 2nd_serve_win_pct)
+        """
+        if not stats:
+            return 0.62  # Tour average fallback
+
+        first_pct = stats.get('career_1st_serve_pct', 0.0)
+        first_win = stats.get('career_1st_serve_win', 0.0)
+        second_win = stats.get('career_2nd_serve_win', 0.0)
+
+        # If no career serve data, fall back to display stats (percentages, need /100)
+        if first_pct == 0.5 and first_win == 0.5 and second_win == 0.5:
+            first_pct = stats.get('first_serve_pct', 62.0) / 100.0
+            first_win = stats.get('first_serve_win_pct', 72.0) / 100.0
+            second_win = stats.get('second_serve_win_pct', 50.0) / 100.0
+
+        prob = (first_pct * first_win) + ((1.0 - first_pct) * second_win)
+        return max(0.45, min(0.85, prob))  # Clamp to realistic range
+
+    def _simulate_game(self, serve_prob):
+        """
+        Simulate a single service game point by point.
+        Returns True if server wins the game.
+        """
+        server_pts = 0
+        returner_pts = 0
+
+        while True:
+            # Play a point
+            if np.random.random() < serve_prob:
+                server_pts += 1
+            else:
+                returner_pts += 1
+
+            # Check for game win (need 4 points with 2-point lead at deuce)
+            if server_pts >= 4 and server_pts - returner_pts >= 2:
+                return True
+            if returner_pts >= 4 and returner_pts - server_pts >= 2:
+                return False
+
+            # At deuce (3-3 or beyond), just need 2-point lead
+            # (already handled above, loop continues)
+
+    def _simulate_tiebreak(self, p1_serve_prob, p2_serve_prob):
+        """
+        Simulate a tiebreak. P1 serves first.
+        Returns (p1_wins: bool, p1_points: int, p2_points: int).
+        """
+        p1_pts = 0
+        p2_pts = 0
+        total_points = 0
+
+        while True:
+            # Determine who serves this point
+            # First point: p1 serves. Then alternate every 2 points.
+            if total_points == 0:
+                serving_prob = p1_serve_prob
+            else:
+                # After first point, server changes every 2 points
+                # Points 1-2: p2 serves, 3-4: p1 serves, etc.
+                cycle = ((total_points - 1) // 2) % 2
+                serving_prob = p2_serve_prob if cycle == 0 else p1_serve_prob
+
+            # Determine who benefits from this serve point
+            # If p1 is serving, p1 wins the point with serving_prob
+            if total_points == 0:
+                p1_serving = True
+            else:
+                cycle = ((total_points - 1) // 2) % 2
+                p1_serving = (cycle == 1)
+
+            if p1_serving:
+                if np.random.random() < p1_serve_prob:
+                    p1_pts += 1
+                else:
+                    p2_pts += 1
+            else:
+                if np.random.random() < p2_serve_prob:
+                    p2_pts += 1
+                else:
+                    p1_pts += 1
+
+            total_points += 1
+
+            # Check for tiebreak win (first to 7 with 2-point lead)
+            if p1_pts >= 7 and p1_pts - p2_pts >= 2:
+                return True, p1_pts, p2_pts
+            if p2_pts >= 7 and p2_pts - p1_pts >= 2:
+                return False, p1_pts, p2_pts
+
+    def _simulate_set(self, p1_serve_prob, p2_serve_prob):
+        """
+        Simulate a full set. P1 serves first.
+        Returns (p1_wins: bool, p1_games: int, p2_games: int, tiebreak_score: str or None).
+        """
+        p1_games = 0
+        p2_games = 0
+        p1_serves = True  # P1 serves first game
+
+        while True:
+            if p1_serves:
+                if self._simulate_game(p1_serve_prob):
+                    p1_games += 1  # Server holds
+                else:
+                    p2_games += 1  # Break!
+            else:
+                if self._simulate_game(p2_serve_prob):
+                    p2_games += 1  # Server holds
+                else:
+                    p1_games += 1  # Break!
+
+            p1_serves = not p1_serves  # Alternate serve
+
+            # Check for set win (first to 6 with 2-game lead)
+            if p1_games >= 6 and p1_games - p2_games >= 2:
+                return True, p1_games, p2_games, None
+            if p2_games >= 6 and p2_games - p1_games >= 2:
+                return False, p1_games, p2_games, None
+
+            # Tiebreak at 6-6
+            if p1_games == 6 and p2_games == 6:
+                p1_wins_tb, tb_winner_pts, tb_loser_pts = self._simulate_tiebreak(p1_serve_prob, p2_serve_prob)
+                if p1_wins_tb:
+                    tb_score = f"({tb_loser_pts})"
+                    return True, 7, 6, tb_score
+                else:
+                    tb_score = f"({tb_loser_pts})"
+                    return False, 6, 7, tb_score
+
     def _simulate_score(self, winner_name, loser_name, winner_prob, sets_to_play, p1_stats, p2_stats):
         """
-        Simulate a realistic match score based on winner probability and tournament rules.
-        
+        Simulate a realistic match score using point-by-point simulation
+        driven by each player's serve point win probability.
+
         Args:
             winner_name: Name of predicted winner
             loser_name: Name of predicted loser
             winner_prob: Probability of winning (0.5 to 1.0)
             sets_to_play: Total sets to be played (must be odd, e.g. 3, 5, 7)
-            p1_stats, p2_stats: Player statistics (for serve strength inference)
-        
+            p1_stats, p2_stats: Player statistics (with career serve rates)
+
         Returns:
-            String representing the score (e.g. "6-4 6-3" or "6-7(5) 7-6(4) 6-4")
+            String representing the score from the winner's perspective
         """
-        # Determine sets needed to win
-        # If sets_to_play is 3, sets_needed is 2. If 5, sets_needed is 3.
         sets_needed = (sets_to_play // 2) + 1
 
+        # Get raw serve point probabilities from career stats
+        winner_raw_serve = self._get_serve_point_prob(p1_stats if winner_name == p1_stats.get('name', winner_name) else p2_stats if p2_stats else p1_stats)
+        loser_raw_serve = self._get_serve_point_prob(p2_stats if winner_name != (p2_stats or {}).get('name', '') else p1_stats if p1_stats else p2_stats)
 
-        
-        # Adjust set win probability relative to match win probability
-        # If match prob is high (e.g. 0.8), set prob should be higher to reflect dominance
-        # If match prob is low (e.g. 0.55), sets should be closer
-        set_margin = (winner_prob - 0.5) * 1.5  # Amplify margin for individual sets
-        set_win_prob = 0.5 + set_margin
-        set_win_prob = min(0.95, max(0.05, set_win_prob))
-        
-        # Serve strength factor (for tiebreak likelihood)
-        p1_serve = p1_stats.get('first_serve_won', 70) if p1_stats else 70
-        p2_serve = p2_stats.get('first_serve_won', 70) if p2_stats else 70
-        avg_serve_win = (p1_serve + p2_serve) / 2
-        tiebreak_factor = (avg_serve_win - 60) / 40  # Higher serve win % -> more tiebreaks
-        tiebreak_factor = min(0.8, max(0.1, tiebreak_factor))
-        
+        # Determine which stats belong to winner vs loser
+        if p1_stats and p2_stats:
+            p1_name = p1_stats.get('name', '')
+            if p1_name == winner_name:
+                w_stats, l_stats = p1_stats, p2_stats
+            else:
+                w_stats, l_stats = p2_stats, p1_stats
+        else:
+            w_stats = p1_stats or {}
+            l_stats = p2_stats or {}
+
+        winner_serve = self._get_serve_point_prob(w_stats)
+        loser_serve = self._get_serve_point_prob(l_stats)
+
+        # Adjust serve probabilities using surface-specific return pressure
+        # Each player's effective serve prob = raw serve prob × (1 - opponent's return win %)
+        # normalized against tour average return (~35%)
+        tour_avg_return = 0.35
+        w_return_pct = w_stats.get('career_surface_return_pct', tour_avg_return)
+        l_return_pct = l_stats.get('career_surface_return_pct', tour_avg_return)
+
+        # Winner faces loser's return; loser faces winner's return
+        # If opponent returns better than avg, your serve gets harder (and vice versa)
+        winner_return_factor = 1.0 - (w_return_pct - tour_avg_return)  # Winner's return hurts loser's serve
+        loser_return_factor = 1.0 - (l_return_pct - tour_avg_return)   # Loser's return hurts winner's serve
+
+        winner_serve = max(0.45, min(0.85, winner_serve * loser_return_factor))
+        loser_serve = max(0.45, min(0.85, loser_serve * winner_return_factor))
+
+        # Small additional adjustment from model confidence to ensure score matches prediction
+        confidence_nudge = (winner_prob - 0.5) * 0.08
+        winner_serve = min(0.85, winner_serve + confidence_nudge)
+        loser_serve = max(0.45, loser_serve - confidence_nudge)
+
+        # Simulate the match set by set
         winner_sets = 0
         loser_sets = 0
         score_parts = []
-        
-        # Simulate sets until one reaches sets_needed
-        while winner_sets < sets_needed:
-            # Determine who wins this set
-            # Bias towards the predicted winner
-            is_winner_set = np.random.random() < set_win_prob
-            
-            # Ensure loser doesn't exceed sets_needed - 1
-            if not is_winner_set and loser_sets >= sets_needed - 1:
-                is_winner_set = True
-            
-            if is_winner_set:
+
+        while winner_sets < sets_needed and loser_sets < sets_needed:
+            w_wins_set, w_games, l_games, tb = self._simulate_set(winner_serve, loser_serve)
+
+            if w_wins_set:
                 winner_sets += 1
-                # Determine score margin
-                rand = np.random.random()
-                if rand < 0.3 * (1 - tiebreak_factor): # Dominant set
-                    score = "6-1" if np.random.random() < 0.3 else "6-2"
-                elif rand < 0.7 * (1 - tiebreak_factor): # Solid set
-                    score = "6-3"
-                elif rand < 0.9 - (0.2 * tiebreak_factor): # Close set
-                    score = "6-4"
-                else: # Tiebreak or 7-5
-                    if np.random.random() < 0.6 + tiebreak_factor:
-                        loser_pts = np.random.randint(0, 6) if np.random.random() < 0.7 else np.random.randint(6, 9)
-                        score = f"7-6({loser_pts})"
-                    else:
-                        score = "7-5"
-                score_parts.append(score)
-                
+                # Winner won: show winner games first (e.g., 6-3)
+                if tb:
+                    score_parts.append(f"{w_games}-{l_games}{tb}")
+                else:
+                    score_parts.append(f"{w_games}-{l_games}")
             else:
                 loser_sets += 1
-                # Loser wins a set (usually closer if they are the underdog)
-                rand = np.random.random()
-                if rand < 0.2:
-                    score = "1-6" if np.random.random() < 0.3 else "2-6"
-                elif rand < 0.6:
-                    score = "3-6" if np.random.random() < 0.5 else "4-6"
+                # Loser won: show loser games first from winner's perspective (e.g., 4-6)
+                if tb:
+                    score_parts.append(f"{w_games}-{l_games}{tb}")
                 else:
-                    if np.random.random() < 0.6 + tiebreak_factor:
-                        loser_pts = np.random.randint(0, 6) if np.random.random() < 0.7 else np.random.randint(6, 9)
-                        score = f"6-7({loser_pts})"
-                    else:
-                        score = "5-7"
-                score_parts.append(score)
-        
-        full_score = " ".join(score_parts)
-        return full_score
+                    score_parts.append(f"{w_games}-{l_games}")
+
+        # If the predicted winner actually lost the simulation (unlikely but possible
+        # with close probabilities), flip the score presentation
+        if loser_sets >= sets_needed:
+            # Predicted winner lost the sim — re-run to get a winner-wins score
+            # (keeps output consistent with the prediction)
+            return self._simulate_score(winner_name, loser_name, winner_prob, sets_to_play, p1_stats, p2_stats)
+
+        return " ".join(score_parts)
 
     def display_predictions(self, predictions, player1_name="Player 1", player2_name="Player 2", sets_to_play=3):
         """Display predictions in a formatted way with player stats."""
