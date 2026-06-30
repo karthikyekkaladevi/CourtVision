@@ -3,17 +3,20 @@ ATP API client and Wikipedia draw scraper for CourtVision.
 Uses Ball Don't Lie API for tournament calendar and rankings,
 and Wikipedia for actual tournament draws.
 """
+import os
 import requests
 import time
 import re
 from datetime import date
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 
+load_dotenv()
 
 # ─── Constants ──────────────────────────────────────────────
 
 API_BASE = "https://api.balldontlie.io/atp/v1"
-API_KEY = "0959324e-fc6d-4ac1-8fc5-2df5f8357353"
+API_KEY = os.getenv("ATP_API_KEY")
 RATE_LIMIT_DELAY = 2.0
 
 CATEGORY_MAP = {
