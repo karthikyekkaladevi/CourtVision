@@ -24,13 +24,26 @@ def load_data(data_path='tennis_atp-master', start_year=1968, end_year=None, inc
         end_year = datetime.now().year
     try:
         path = Path(data_path)
-        
+
         if path.is_file():
             print(f"Reading single data file: {data_path}...")
             df = pd.read_csv(data_path, low_memory=False)
         elif path.is_dir():
+            # Check for a valid parquet cache
+            cache_path = path / 'cache.parquet'
+            cache_key_path = path / 'cache.key'
+            cache_key = f"{start_year}-{end_year}-{'-'.join(sorted(include_types))}"
+
+            if cache_path.exists() and cache_key_path.exists():
+                stored_key = cache_key_path.read_text().strip()
+                if stored_key == cache_key:
+                    print(f"Loading cached data from {cache_path}...")
+                    df = pd.read_parquet(cache_path)
+                    print(f"[OK] Successfully loaded total data: {df.shape[0]:,} rows, {df.shape[1]} columns")
+                    return df
+
             print(f"Reading tournament data from directory: {data_path} ({start_year}-{end_year})...")
-            
+
             # Map types to file patterns
             type_patterns = {
                 'tour': "atp_matches_[0-9][0-9][0-9][0-9].csv",
@@ -39,13 +52,13 @@ def load_data(data_path='tennis_atp-master', start_year=1968, end_year=None, inc
                 'futures': "atp_matches_futures_[0-9][0-9][0-9][0-9].csv",
                 'amateur': "atp_matches_amateur.csv"
             }
-            
+
             all_valid_files = []
             for t in include_types:
                 if t in type_patterns:
                     pattern = type_patterns[t]
                     files = sorted(list(path.glob(pattern)))
-                    
+
                     # Filter by year range if pattern has a year
                     if "[0-9]" in pattern:
                         for f in files:
@@ -60,25 +73,25 @@ def load_data(data_path='tennis_atp-master', start_year=1968, end_year=None, inc
                     else:
                         # Non-yearly files like amateur
                         all_valid_files.extend(files)
-            
+
             if not all_valid_files:
                 print(f"[ERROR] No matching files found in {data_path} for types {include_types}")
                 return pd.DataFrame()
-                
+
             print(f"  Found {len(all_valid_files)} match files. Concatenating...")
             df_list = []
-            
+
             try:
                 from tqdm import tqdm
                 iterator = tqdm(all_valid_files, desc="Loading CSVs")
             except ImportError:
                 print("  (Tip: install 'tqdm' for a progress bar)")
                 iterator = all_valid_files
-                
+
             for f in iterator:
                 curr_df = pd.read_csv(f, low_memory=False)
                 df_list.append(curr_df)
-            
+
             df = pd.concat(df_list, axis=0, ignore_index=True)
         else:
             print(f"[ERROR] path '{data_path}' is neither a file nor a directory!")
@@ -105,6 +118,16 @@ def load_data(data_path='tennis_atp-master', start_year=1968, end_year=None, inc
                 df[col] = pd.to_numeric(df[col], errors='coerce')
         
         print(f"[OK] Successfully loaded total data: {df.shape[0]:,} rows, {df.shape[1]} columns")
+
+        # Save parquet cache for future runs
+        if path.is_dir():
+            try:
+                df.to_parquet(cache_path, index=False)
+                cache_key_path.write_text(cache_key)
+                print(f"  Cached to {cache_path} for faster future loads.")
+            except Exception:
+                pass  # Caching is best-effort
+
         return df
     except FileNotFoundError:
         print(f"[ERROR] File '{data_path}' not found!")

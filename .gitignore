@@ -22,3 +22,7 @@ backups/
 
 # Environment variables (contains API keys)
 .env
+
+# Data cache
+*.parquet
+*.key
