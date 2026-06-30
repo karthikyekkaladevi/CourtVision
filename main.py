@@ -394,15 +394,33 @@ def _simulate_upcoming_tournament():
         return
 
     # Show upcoming tournaments
-    print(f"\n  Next tournament: {next_tourney['name']}")
+    from datetime import date as _date
+    today_str = _date.today().isoformat()
+    is_current = next_tourney.get('start_date', '') <= today_str
+
+    if is_current:
+        print(f"\n  Current tournament going on: {next_tourney['name']}")
+    else:
+        print(f"\n  Next tournament: {next_tourney['name']}")
     print(f"  Start date: {next_tourney.get('start_date', 'Unknown')}")
     print(f"  Category: {next_tourney.get('category', 'Unknown')}")
     print(f"  Surface: {next_tourney.get('surface', 'Unknown')}")
 
     if len(upcoming) > 1:
-        print(f"\n  Upcoming tournaments:")
-        for i, t in enumerate(upcoming):
-            print(f"    {i+1}. {t['name']} ({t.get('start_date', '?')}) - {t.get('category', '?')}")
+        # Separate current vs upcoming for display
+        current = [t for t in upcoming if t.get('start_date', '') <= today_str]
+        future = [t for t in upcoming if t.get('start_date', '') > today_str]
+
+        if current:
+            print(f"\n  Current tournament:")
+            for i, t in enumerate(current):
+                print(f"    {i+1}. {t['name']} ({t.get('start_date', '?')}) - {t.get('category', '?')}")
+
+        if future:
+            offset = len(current)
+            print(f"\n  Next tournaments:")
+            for i, t in enumerate(future):
+                print(f"    {offset+i+1}. {t['name']} ({t.get('start_date', '?')}) - {t.get('category', '?')}")
         pick = input(f"\n  Select tournament (1-{len(upcoming)}, default 1): ").strip()
         if pick.isdigit() and 1 <= int(pick) <= len(upcoming):
             next_tourney = upcoming[int(pick) - 1]

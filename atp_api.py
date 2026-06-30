@@ -105,7 +105,7 @@ def find_next_tournament(calendar=None):
         calendar = fetch_tournament_calendar()
 
     today = date.today().isoformat()
-    upcoming = [t for t in calendar if t.get("start_date", "") >= today]
+    upcoming = [t for t in calendar if t.get("end_date", t.get("start_date", "")) >= today]
     # Sort by start date
     upcoming.sort(key=lambda t: t["start_date"])
 
