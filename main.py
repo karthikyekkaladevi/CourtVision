@@ -534,6 +534,22 @@ def option_3_performance():
 
         print()
 
+        # Walk-forward backtest sub-option
+        print("\n  b. Run walk-forward backtest (accuracy per year)")
+        run_wf = input("  Run backtest? (y/n, default n): ").strip().lower()
+        if run_wf == 'y':
+            from data_loader import load_data
+            from feature_engineering import prepare_features_for_training
+            from model_trainer import ModelTrainer
+
+            print("\n  Loading data for backtest...")
+            df = load_data()
+            _, _, feature_cols, encoders, df_feats = prepare_features_for_training(df)
+
+            trainer = ModelTrainer()
+            trainer.feature_names = feature_cols
+            trainer.walk_forward_backtest(df_feats, feature_cols)
+
     except Exception as e:
         print(f"\n  Error: {e}")
         import traceback

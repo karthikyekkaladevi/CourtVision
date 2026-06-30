@@ -22,10 +22,11 @@ except ImportError:
 # Scikit-learn models
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import (accuracy_score, precision_score, recall_score, 
-                            f1_score, roc_auc_score, confusion_matrix, 
+from sklearn.metrics import (accuracy_score, precision_score, recall_score,
+                            f1_score, roc_auc_score, confusion_matrix,
                             classification_report, log_loss)
 from sklearn.inspection import permutation_importance
 
@@ -237,7 +238,7 @@ class ModelTrainer:
         
         return results
     
-    def _evaluate_model(self, y_true, y_pred, y_pred_proba, model_name):
+    def _evaluate_model(self, y_true, y_pred, y_pred_proba, model_name=''):
         """Evaluate model performance."""
         results = {
             'model_name': model_name,
@@ -249,7 +250,7 @@ class ModelTrainer:
             'log_loss': log_loss(y_true, y_pred_proba),
             'confusion_matrix': confusion_matrix(y_true, y_pred).tolist()
         }
-        
+
         return results
     
     def train_all_models(self, X_train, y_train, X_test, y_test, feature_names, selected_keys=None, encoders=None):
@@ -269,14 +270,14 @@ class ModelTrainer:
         self.feature_names = feature_names
         if encoders:
             self.encoders = encoders
-        
+
         training_map = {
             'logistic_regression': self.train_logistic_regression,
             'random_forest': self.train_random_forest,
             'xgboost': self.train_xgboost,
             'neural_network': self.train_neural_network
         }
-        
+
         # Default: train logistic_regression, xgboost, and neural_network
         default_keys = ['logistic_regression', 'xgboost', 'neural_network']
 
@@ -287,15 +288,35 @@ class ModelTrainer:
                 keys_to_train = default_keys
         else:
             keys_to_train = default_keys
-            
+
+        # Reserve last 20% of training data for calibration (temporal order preserved)
+        calib_split = int(len(X_train) * 0.8)
+        X_fit, X_calib = X_train[:calib_split], X_train[calib_split:]
+        y_fit, y_calib = y_train[:calib_split], y_train[calib_split:]
+        print(f"\n  Calibration split: {len(X_fit):,} fit / {len(X_calib):,} calibration samples")
+
         print("\n" + "="*60)
         print(f"TRAINING {len(keys_to_train)} MODEL(S)")
         print("="*60)
-        
+
         # Train each selected model
         for key in keys_to_train:
             start_time = time.time()
-            self.evaluation_results[key] = training_map[key](X_train, y_train, X_test, y_test)
+            # Neural network uses full X_train internally (handles its own val split)
+            if key == 'neural_network':
+                self.evaluation_results[key] = training_map[key](X_train, y_train, X_test, y_test)
+            else:
+                self.evaluation_results[key] = training_map[key](X_fit, y_fit, X_test, y_test)
+                # Calibrate the trained model on the held-out calibration set
+                if key in self.models:
+                    print(f"  Calibrating {key}...")
+                    calibrated = CalibratedClassifierCV(self.models[key], method='isotonic', cv='prefit')
+                    calibrated.fit(X_calib, y_calib)
+                    self.models[key] = calibrated
+                    # Re-evaluate with calibrated model
+                    y_pred = calibrated.predict(X_test)
+                    y_proba = calibrated.predict_proba(X_test)[:, 1]
+                    self.evaluation_results[key].update(self._evaluate_model(y_pred_proba=y_proba, y_pred=y_pred, y_true=y_test, model_name=key))
             end_time = time.time()
             self.training_times[key] = end_time - start_time
             print(f"  [TIME] {key} took {self.training_times[key]:.2f} seconds")
@@ -350,6 +371,61 @@ class ModelTrainer:
         print(f"  F1-Score: {results_df['F1-Score'].idxmax()} ({results_df['F1-Score'].max():.4f})")
         print(f"  ROC-AUC: {results_df['ROC-AUC'].idxmax()} ({results_df['ROC-AUC'].max():.4f})")
     
+    def walk_forward_backtest(self, df_feats, feature_cols, start_year=2015):
+        """
+        Walk-forward backtest: train on all data before year Y, test on year Y.
+        Rolls forward from start_year to present, showing accuracy per year.
+        Uses a lightweight XGBoost to keep it fast.
+        """
+        import xgboost as xgb
+
+        df_feats = df_feats.copy()
+        if not pd.api.types.is_datetime64_any_dtype(df_feats['tourney_date']):
+            df_feats['tourney_date'] = pd.to_datetime(df_feats['tourney_date'], errors='coerce')
+
+        years = sorted(df_feats['tourney_date'].dt.year.dropna().unique().astype(int))
+        years = [y for y in years if y >= start_year]
+
+        print(f"\n  Walk-forward backtest ({start_year} → {years[-1]})...")
+        print(f"  {'Year':<6} {'Accuracy':>10} {'ROC-AUC':>10} {'N (test)':>10}")
+        print("  " + "-" * 40)
+
+        rows = []
+        for year in years:
+            train_df = df_feats[df_feats['tourney_date'].dt.year < year]
+            test_df  = df_feats[df_feats['tourney_date'].dt.year == year]
+
+            if len(train_df) < 500 or len(test_df) < 20:
+                continue
+
+            X_tr = np.nan_to_num(train_df[feature_cols].values, nan=0.0)
+            y_tr = train_df['target'].values
+            X_te = np.nan_to_num(test_df[feature_cols].values, nan=0.0)
+            y_te = test_df['target'].values
+
+            model = xgb.XGBClassifier(
+                n_estimators=50, max_depth=4, learning_rate=0.1,
+                random_state=42, eval_metric='logloss', n_jobs=-1
+            )
+            model.fit(X_tr, y_tr)
+
+            y_pred  = model.predict(X_te)
+            y_proba = model.predict_proba(X_te)[:, 1]
+            acc = accuracy_score(y_te, y_pred)
+            roc = roc_auc_score(y_te, y_proba)
+
+            rows.append({'year': year, 'accuracy': acc, 'roc_auc': roc, 'n_test': len(test_df)})
+            print(f"  {year:<6} {acc:>10.4f} {roc:>10.4f} {len(test_df):>10,}")
+
+        if rows:
+            results_df = pd.DataFrame(rows)
+            avg_acc = results_df['accuracy'].mean()
+            avg_roc = results_df['roc_auc'].mean()
+            print("  " + "-" * 40)
+            print(f"  {'Avg':<6} {avg_acc:>10.4f} {avg_roc:>10.4f}")
+
+        return pd.DataFrame(rows)
+
     def save_models(self):
         """Save all trained models."""
         print("\nSaving models...")
