@@ -23,9 +23,9 @@ Three models trained on 200K+ historical matches with a temporal train/test spli
 
 | Model | Type | ROC-AUC |
 | --- | --- | --- |
-| Logistic Regression | Baseline linear model | 0.800 |
+| Logistic Regression | Baseline linear model | 0.788 |
 | XGBoost | Gradient-boosted trees | 0.861 |
-| Neural Network | 3-layer network (128-64-32) | 0.848 |
+| Neural Network | 3-layer network (128-64-32) | 0.855 |
 | ELO | Surface-weighted rating system | - |
 
 Predictions are averaged across all models for the final consensus probability.

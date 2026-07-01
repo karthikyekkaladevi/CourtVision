@@ -398,19 +398,19 @@ def _simulate_historical_tournament():
     cat_choice = input("  Choice (1-4, default 1): ").strip() or '1'
 
     if cat_choice == '1':
-        level_code = 'G'
+        level_codes = {'G'}
         category_label = "Grand Slam"
         atp500_only = None
     elif cat_choice == '2':
-        level_code = 'M'
+        level_codes = {'M'}
         category_label = "Masters 1000"
         atp500_only = None
     elif cat_choice == '3':
-        level_code = 'A'
+        level_codes = {'A', '500'}
         category_label = "ATP 500"
         atp500_only = True
     else:
-        level_code = 'A'
+        level_codes = {'A', '250'}
         category_label = "ATP 250"
         atp500_only = False
 
@@ -431,29 +431,36 @@ def _simulate_historical_tournament():
 
     # Filter by year
     df_year = df[df['tourney_date'].astype(str).str[:4] == str(year)]
-    df_cat = df_year[df_year['tourney_level'] == level_code].copy()
+    df_cat = df_year[df_year['tourney_level'].isin(level_codes)].copy()
 
-    # Split ATP 500 vs 250
-    if level_code == 'A' and atp500_only is not None:
+    # Split ATP 500 vs 250 within 'A'-coded rows (older data uses 'A' for both)
+    if atp500_only is not None:
         def _is_500(name):
             n = str(name).lower()
             return any(t in n for t in ATP_500_TOURNAMENTS)
-        mask = df_cat['tourney_name'].apply(_is_500)
-        df_cat = df_cat[mask] if atp500_only else df_cat[~mask]
+        # Explicit '500'/'250' coded rows are already correctly separated;
+        # only apply name-based split to legacy 'A'-coded rows
+        legacy = df_cat['tourney_level'] == 'A'
+        explicit_500 = df_cat['tourney_level'] == '500'
+        explicit_250 = df_cat['tourney_level'] == '250'
+        if atp500_only:
+            mask = explicit_500 | (legacy & df_cat['tourney_name'].apply(_is_500))
+        else:
+            mask = explicit_250 | (legacy & ~df_cat['tourney_name'].apply(_is_500))
+        df_cat = df_cat[mask]
 
     # Enumerate unique tournaments
     if df_cat.empty:
         print(f"\n  No {category_label} tournaments found for {year}.")
         return
 
+    default_draw = 128 if 'G' in level_codes else 64 if 'M' in level_codes else 32
     tournaments = []
     for name, group in df_cat.groupby('tourney_name'):
         surface = group['surface'].dropna().iloc[0] if group['surface'].notna().any() else 'Hard'
-        if group['draw_size'].notna().any():
-            draw_size = int(group['draw_size'].dropna().iloc[0])
-        else:
-            draw_size = 128 if level_code == 'G' else 64 if level_code == 'M' else 32
-        tournaments.append({'name': name, 'surface': surface, 'draw_size': draw_size})
+        draw_size = int(group['draw_size'].dropna().iloc[0]) if group['draw_size'].notna().any() else default_draw
+        raw_level = group['tourney_level'].iloc[0]
+        tournaments.append({'name': name, 'surface': surface, 'draw_size': draw_size, 'raw_level': raw_level})
     tournaments.sort(key=lambda t: t['name'])
 
     # Display tournament list
@@ -514,15 +521,20 @@ def _simulate_historical_tournament():
     # Monte Carlo simulation
     iterations = _get_iterations()
 
+    # Normalise level_code for simulator: map explicit '500'/'250' back to 'A'
+    sim_level = chosen.get('raw_level', 'A')
+    if sim_level in ('500', '250'):
+        sim_level = 'A'
+
     mc_results = simulator.simulate_tournament_monte_carlo(
         sim_players, iterations=iterations,
-        surface=chosen['surface'], tourney_level=level_code,
+        surface=chosen['surface'], tourney_level=sim_level,
         use_model='average', draw_size=chosen['draw_size']
     )
 
     _display_mc_results(
         mc_results, f"{chosen['name']} {year}",
-        surface=chosen['surface'], tourney_level=level_code,
+        surface=chosen['surface'], tourney_level=sim_level,
         sim_players=sim_players, draw_size=chosen['draw_size']
     )
 
