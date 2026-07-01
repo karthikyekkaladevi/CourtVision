@@ -528,7 +528,7 @@ def option_3_performance():
         print("FEATURE IMPORTANCE")
         print("="*60)
 
-        for model_name in ['xgboost', 'random_forest']:
+        for model_name in ['xgboost']:
             if model_name in results and 'feature_importance' in results[model_name]:
                 print(f"\n  {model_name.replace('_', ' ').title()}:")
                 importance = results[model_name]['feature_importance']

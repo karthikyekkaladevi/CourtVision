@@ -198,7 +198,7 @@ class TournamentSimulator:
             p2_info: Name (str) or dict with 'name' and optional 'year'
             surface: Surface type
             tourney_level: Tournament level
-            use_model: Which model to use ('average', 'xgboost', 'random_forest', etc.)
+            use_model: Which model to use ('average', 'xgboost', 'neural_network', etc.)
             
         Returns:
             Dictionary with 'winner', 'score', and 'predictions'
