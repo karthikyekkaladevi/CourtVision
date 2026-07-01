@@ -92,26 +92,21 @@ CourtVision/
 
 ## Setup
 
-**Mac/Linux:**
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-bash setup.sh
+pip install -r requirements.txt
 ```
-
-**Windows:**
-```bat
-python -m venv .venv
-.venv\Scripts\activate
-setup.bat
-```
-
-The setup script downloads Jeff Sackmann's ATP match dataset and installs all dependencies automatically.
 
 Create a `.env` file in the project root with your Ball Don't Lie API key:
 ```
 ATP_API_KEY=your_key_here
 ```
+
+**Getting your API key:**
+1. Go to [balldontlie.io](https://balldontlie.io) and create a free account
+2. After signing in, go to your dashboard and copy your API key
+3. Paste it into your `.env` file as shown above
+
+> The API key is only needed for the **Live/Upcoming ATP Tournament** feature which fetches the current tournament calendar. All other features (H2H prediction, custom tournament simulation, model training) work without it.
 
 Then train the models and run:
 ```bash

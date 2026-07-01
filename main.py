@@ -14,6 +14,13 @@ import warnings
 warnings.filterwarnings('ignore')
 
 
+ATP_500_TOURNAMENTS = {
+    "rotterdam", "dubai", "acapulco", "barcelona", "hamburg",
+    "washington", "beijing", "tokyo", "vienna", "basel",
+    "halle", "queen", "marseille", "rio de janeiro",
+}
+
+
 def get_validated_player_name(simulator, p_name, label="Player"):
     """
     Helper to validate a player name with fuzzy matching and a retry loop.
@@ -191,11 +198,17 @@ def option_2_simulate():
             return
 
         print("\n  a. Custom tournament")
-        print("  b. Upcoming ATP tournament")
+        print("  b. Real life ATP tournament")
         mode = input("  Choice (a/b, default a): ").strip().lower() or 'a'
 
         if mode == 'b':
-            _simulate_upcoming_tournament()
+            print("\n  a. Historical tournament")
+            print("  b. Current / upcoming tournament")
+            sub = input("  Choice (a/b, default a): ").strip().lower() or 'a'
+            if sub == 'b':
+                _simulate_upcoming_tournament()
+            else:
+                _simulate_historical_tournament()
         else:
             _simulate_custom_tournament()
 
@@ -370,6 +383,148 @@ def _simulate_custom_tournament():
     _display_mc_results(mc_results, tournament_name, surface=surface,
                         tourney_level=tourney_level, sim_players=players,
                         draw_size=draw_size)
+
+
+def _simulate_historical_tournament():
+    """Browse and simulate any historical ATP tournament from CSV data."""
+    from datetime import datetime as _dt
+
+    # Category menu
+    print("\n  Select category:")
+    print("    1. Grand Slams")
+    print("    2. Masters 1000")
+    print("    3. ATP 500")
+    print("    4. ATP 250")
+    cat_choice = input("  Choice (1-4, default 1): ").strip() or '1'
+
+    if cat_choice == '1':
+        level_code = 'G'
+        category_label = "Grand Slam"
+        atp500_only = None
+    elif cat_choice == '2':
+        level_code = 'M'
+        category_label = "Masters 1000"
+        atp500_only = None
+    elif cat_choice == '3':
+        level_code = 'A'
+        category_label = "ATP 500"
+        atp500_only = True
+    else:
+        level_code = 'A'
+        category_label = "ATP 250"
+        atp500_only = False
+
+    # Year input
+    current_year = _dt.now().year
+    while True:
+        year_input = input(f"  Enter year (1968-{current_year}): ").strip()
+        if year_input.isdigit() and 1968 <= int(year_input) <= current_year:
+            year = int(year_input)
+            break
+        print(f"  Please enter a year between 1968 and {current_year}.")
+
+    # Load data via simulator (reuses df_historical, tour-only is correct for draw reconstruction)
+    print(f"\n  Loading {category_label} data for {year}...")
+    simulator = TournamentSimulator()
+    simulator.load_historical_data()
+    df = simulator.df_historical
+
+    # Filter by year
+    df_year = df[df['tourney_date'].astype(str).str[:4] == str(year)]
+    df_cat = df_year[df_year['tourney_level'] == level_code].copy()
+
+    # Split ATP 500 vs 250
+    if level_code == 'A' and atp500_only is not None:
+        def _is_500(name):
+            n = str(name).lower()
+            return any(t in n for t in ATP_500_TOURNAMENTS)
+        mask = df_cat['tourney_name'].apply(_is_500)
+        df_cat = df_cat[mask] if atp500_only else df_cat[~mask]
+
+    # Enumerate unique tournaments
+    if df_cat.empty:
+        print(f"\n  No {category_label} tournaments found for {year}.")
+        return
+
+    tournaments = []
+    for name, group in df_cat.groupby('tourney_name'):
+        surface = group['surface'].dropna().iloc[0] if group['surface'].notna().any() else 'Hard'
+        if group['draw_size'].notna().any():
+            draw_size = int(group['draw_size'].dropna().iloc[0])
+        else:
+            draw_size = 128 if level_code == 'G' else 64 if level_code == 'M' else 32
+        tournaments.append({'name': name, 'surface': surface, 'draw_size': draw_size})
+    tournaments.sort(key=lambda t: t['name'])
+
+    # Display tournament list
+    print(f"\n  {category_label} tournaments in {year}:")
+    for i, t in enumerate(tournaments):
+        print(f"    {i+1}. {t['name']}  ({t['surface']}, {t['draw_size']} players)")
+
+    while True:
+        pick = input(f"\n  Select tournament (1-{len(tournaments)}): ").strip()
+        if pick.isdigit() and 1 <= int(pick) <= len(tournaments):
+            chosen = tournaments[int(pick) - 1]
+            break
+        print(f"  Please enter a number between 1 and {len(tournaments)}.")
+
+    # Reconstruct draw from CSV
+    df_tourney = df_cat[df_cat['tourney_name'] == chosen['name']]
+    player_map = {}  # name -> seed (real seed or NaN)
+
+    for _, row in df_tourney.iterrows():
+        for name_col, seed_col in [('winner_name', 'winner_seed'), ('loser_name', 'loser_seed')]:
+            pname = row[name_col]
+            seed = row[seed_col]
+            if pd.isna(pname):
+                continue
+            if pname not in player_map:
+                player_map[pname] = seed
+            elif pd.notna(seed):
+                existing = player_map[pname]
+                if pd.isna(existing):
+                    player_map[pname] = seed
+                else:
+                    player_map[pname] = min(existing, seed)
+
+    seeded = sorted(
+        [(int(s), n) for n, s in player_map.items() if pd.notna(s)],
+        key=lambda x: x[0]
+    )
+    unseeded = [n for n, s in player_map.items() if pd.isna(s)]
+
+    next_syn = (seeded[-1][0] + 1) if seeded else 1
+    sim_players = [{'seed': s, 'name': n, 'year': year} for s, n in seeded]
+    for n in unseeded:
+        sim_players.append({'seed': next_syn, 'name': n, 'year': year})
+        next_syn += 1
+
+    if len(sim_players) < chosen['draw_size'] // 2:
+        print(f"\n  Warning: Only {len(sim_players)} players found (expected {chosen['draw_size']}). Draw may be incomplete.")
+
+    # Show draw summary
+    print(f"\n  {chosen['name']} {year} — {chosen['surface']}, {chosen['draw_size']}-player draw")
+    print(f"  Players found: {len(sim_players)} ({len(seeded)} seeded, {len(unseeded)} unseeded)")
+    print(f"\n  Top seeds:")
+    for s, n in seeded[:8]:
+        print(f"    [{s}] {n}")
+    if len(seeded) > 8:
+        print(f"    ... and {len(seeded) - 8} more seeded players")
+
+    # Monte Carlo simulation
+    iterations = _get_iterations()
+
+    mc_results = simulator.simulate_tournament_monte_carlo(
+        sim_players, iterations=iterations,
+        surface=chosen['surface'], tourney_level=level_code,
+        use_model='average', draw_size=chosen['draw_size']
+    )
+
+    _display_mc_results(
+        mc_results, f"{chosen['name']} {year}",
+        surface=chosen['surface'], tourney_level=level_code,
+        sim_players=sim_players, draw_size=chosen['draw_size']
+    )
 
 
 def _simulate_upcoming_tournament():
