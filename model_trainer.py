@@ -21,8 +21,6 @@ except ImportError:
 
 # Scikit-learn models
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.calibration import CalibratedClassifierCV
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import (accuracy_score, precision_score, recall_score,
@@ -89,31 +87,6 @@ class ModelTrainer:
         # Save model and scaler
         self.models['logistic_regression'] = pipeline
         self.scalers['logistic_regression'] = pipeline.named_steps['scaler']
-        
-        return results
-    
-    def train_random_forest(self, X_train, y_train, X_test, y_test):
-        """Train Random Forest model."""
-        print("\nTraining Random Forest...")
-        
-        # No scaling needed for Random Forest
-        model = RandomForestClassifier(n_estimators=100, max_depth=20, random_state=42, n_jobs=-1)
-        
-        model.fit(X_train, y_train)
-        
-        # Predictions
-        y_pred = model.predict(X_test)
-        y_pred_proba = model.predict_proba(X_test)[:, 1]
-        
-        # Evaluation
-        results = self._evaluate_model(y_test, y_pred, y_pred_proba, 'Random Forest')
-        
-        # Feature importance
-        feature_importance = dict(zip(self.feature_names, model.feature_importances_))
-        results['feature_importance'] = feature_importance
-        
-        # Save model
-        self.models['random_forest'] = model
         
         return results
     
@@ -263,7 +236,7 @@ class ModelTrainer:
             X_test: Test features
             y_test: Test targets
             feature_names: List of feature names
-            selected_keys: List of model keys to train (e.g., ['xgboost', 'random_forest']).
+            selected_keys: List of model keys to train (e.g., ['xgboost', 'neural_network']).
                           If None, trains all models.
             encoders: Dict of fitted LabelEncoders from feature engineering.
         """
@@ -273,7 +246,6 @@ class ModelTrainer:
 
         training_map = {
             'logistic_regression': self.train_logistic_regression,
-            'random_forest': self.train_random_forest,
             'xgboost': self.train_xgboost,
             'neural_network': self.train_neural_network
         }
@@ -289,12 +261,6 @@ class ModelTrainer:
         else:
             keys_to_train = default_keys
 
-        # Reserve last 20% of training data for calibration (temporal order preserved)
-        calib_split = int(len(X_train) * 0.8)
-        X_fit, X_calib = X_train[:calib_split], X_train[calib_split:]
-        y_fit, y_calib = y_train[:calib_split], y_train[calib_split:]
-        print(f"\n  Calibration split: {len(X_fit):,} fit / {len(X_calib):,} calibration samples")
-
         print("\n" + "="*60)
         print(f"TRAINING {len(keys_to_train)} MODEL(S)")
         print("="*60)
@@ -302,21 +268,7 @@ class ModelTrainer:
         # Train each selected model
         for key in keys_to_train:
             start_time = time.time()
-            # Neural network uses full X_train internally (handles its own val split)
-            if key == 'neural_network':
-                self.evaluation_results[key] = training_map[key](X_train, y_train, X_test, y_test)
-            else:
-                self.evaluation_results[key] = training_map[key](X_fit, y_fit, X_test, y_test)
-                # Calibrate the trained model on the held-out calibration set
-                if key in self.models:
-                    print(f"  Calibrating {key}...")
-                    calibrated = CalibratedClassifierCV(self.models[key], method='isotonic', cv='prefit')
-                    calibrated.fit(X_calib, y_calib)
-                    self.models[key] = calibrated
-                    # Re-evaluate with calibrated model
-                    y_pred = calibrated.predict(X_test)
-                    y_proba = calibrated.predict_proba(X_test)[:, 1]
-                    self.evaluation_results[key].update(self._evaluate_model(y_pred_proba=y_proba, y_pred=y_pred, y_true=y_test, model_name=key))
+            self.evaluation_results[key] = training_map[key](X_train, y_train, X_test, y_test)
             end_time = time.time()
             self.training_times[key] = end_time - start_time
             print(f"  [TIME] {key} took {self.training_times[key]:.2f} seconds")

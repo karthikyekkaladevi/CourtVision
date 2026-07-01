@@ -9,6 +9,9 @@ __pycache__/
 # Models (train your own)
 models/
 
+# Claude's personal stuff (not to be shared)
+.claude/
+
 # ATP match data (download via setup.sh / setup.bat)
 tennis_atp-master/
 
