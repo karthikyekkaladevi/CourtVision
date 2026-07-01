@@ -22,6 +22,7 @@ class MatchPredictor:
         self.encoders = self.trainer.encoders
         self.elo_calculator = ELOCalculator(cache_path=os.path.join(models_dir, 'elo_ratings.json'))
         self._elo_loaded = False
+        self._player_stats_cache = {}
     
     def _build_feature_vector(self, player1_data, player2_data, surface, tourney_level):
         """
@@ -290,6 +291,10 @@ class MatchPredictor:
     
     def _get_player_stats(self, player_name, df, surface=None):
         """Extract player statistics from historical data (averages across recent matches)."""
+        cache_key = (player_name, surface, len(df))
+        if cache_key in self._player_stats_cache:
+            return self._player_stats_cache[cache_key]
+
         winner_matches = df[df['winner_name'] == player_name].copy()
         loser_matches = df[df['loser_name'] == player_name].copy()
         
@@ -298,7 +303,7 @@ class MatchPredictor:
         total_matches = total_wins + total_losses
         
         if total_matches == 0:
-            return {
+            default = {
                 'rank': 9999, 'rank_points': 0, 'seed': 999,
                 'age': 25, 'height': 180, 'hand': 'R',
                 'win_rate': 0.5, 'surface_win_rate': 0.5,
@@ -319,6 +324,8 @@ class MatchPredictor:
                 # Fatigue
                 'days_since_last': 30, 'matches_last_30d': 0,
             }
+            self._player_stats_cache[cache_key] = default
+            return default
         
         # Get most recent match for rank/age/height/hand
         all_matches = pd.concat([winner_matches, loser_matches])
@@ -566,6 +573,8 @@ class MatchPredictor:
             # Surface return pressure
             'career_surface_return_pct': career_surface_return_pct,
         }
+        self._player_stats_cache[cache_key] = result
+        return result
 
     def simulate_score(self, winner_name, loser_name, winner_prob, sets_to_play, p1_stats, p2_stats):
         """

@@ -93,19 +93,19 @@ def compute_symmetric_features(df):
 
     processed_rows = []
 
-    # Random seed for Reproducible randomness in A/B assignment
-    np.random.seed(42)
+    # Local RNG for reproducible A/B assignment without polluting global numpy state
+    rng = np.random.default_rng(42)
 
     for i, row in df.iterrows():
         surface = row.get('surface', 'Hard')
         w_name = row['winner_name']
         l_name = row['loser_name']
-        
+
         if pd.isna(w_name) or pd.isna(l_name):
             continue
-            
+
         # Randomly assign slots A and B
-        if np.random.random() > 0.5:
+        if rng.random() > 0.5:
             p1, p2 = w_name, l_name
             target = 1  # Player 1 won
             p1_rank, p2_rank = row['winner_rank'], row['loser_rank']

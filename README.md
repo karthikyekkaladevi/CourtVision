@@ -92,13 +92,21 @@ CourtVision/
 
 ## Setup
 
+**Mac/Linux:**
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate       # Mac/Linux
-.venv\Scripts\activate          # Windows
-
-pip install -r requirements.txt
+source .venv/bin/activate
+bash setup.sh
 ```
+
+**Windows:**
+```bat
+python -m venv .venv
+.venv\Scripts\activate
+setup.bat
+```
+
+The setup script downloads Jeff Sackmann's ATP match dataset and installs all dependencies automatically.
 
 Create a `.env` file in the project root with your Ball Don't Lie API key:
 ```

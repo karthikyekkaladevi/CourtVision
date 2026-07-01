@@ -9,6 +9,9 @@ __pycache__/
 # Models (train your own)
 models/
 
+# ATP match data (download via setup.sh / setup.bat)
+tennis_atp-master/
+
 # macOS
 .DS_Store
 *.dylib
