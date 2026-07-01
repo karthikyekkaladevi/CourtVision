@@ -6,7 +6,7 @@ import numpy as np
 from pathlib import Path
 
 
-def load_data(data_path='tennis_atp-master', start_year=1968, end_year=None, include_types=['tour']):
+def load_data(data_path='tennis_atp-master', start_year=1968, end_year=None, include_types=['tour', 'qual_chall', 'futures']):
     """
     Load ATP match data from a file or a directory of yearly CSV files.
 
