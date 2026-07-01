@@ -253,7 +253,7 @@ class ModelTrainer:
 
         return results
     
-    def train_all_models(self, X_train, y_train, X_test, y_test, feature_names, selected_keys=None, encoders=None):
+    def train_all_models(self, X_train, y_train, X_test, y_test, feature_names, selected_keys=None, encoders=None, test_df=None):
         """
         Train specific or all models.
 
@@ -321,9 +321,13 @@ class ModelTrainer:
             self.training_times[key] = end_time - start_time
             print(f"  [TIME] {key} took {self.training_times[key]:.2f} seconds")
         
+        # Evaluate ELO and ensemble if player names are available in test_df
+        if test_df is not None and 'p1_name' in test_df.columns and 'p2_name' in test_df.columns:
+            self._evaluate_elo_and_ensemble(test_df, X_test, y_test)
+
         # Save all models (only those that were just trained will be overwritten)
         self.save_models()
-        
+
         # Display results for models trained in this session
         self.display_session_results(keys_to_train)
         
@@ -371,6 +375,51 @@ class ModelTrainer:
         print(f"  F1-Score: {results_df['F1-Score'].idxmax()} ({results_df['F1-Score'].max():.4f})")
         print(f"  ROC-AUC: {results_df['ROC-AUC'].idxmax()} ({results_df['ROC-AUC'].max():.4f})")
     
+    def _evaluate_elo_and_ensemble(self, test_df, X_test, y_test):
+        """Compute ROC-AUC for standalone ELO and the full ensemble on the test set."""
+        from elo_calculator import ELOCalculator
+        elo = ELOCalculator(cache_path=os.path.join(self.models_dir, 'elo_ratings.json'))
+        loaded, _ = elo.load()
+        if not loaded:
+            print("  [WARN] ELO cache not found — skipping ELO/ensemble evaluation.")
+            return
+
+        print("\n  Evaluating ELO and ensemble on test set...")
+        p1_names = test_df['p1_name'].values
+        p2_names = test_df['p2_name'].values
+
+        elo_probas = np.array([
+            elo.predict_winner(p1, p2)['probability']
+            for p1, p2 in zip(p1_names, p2_names)
+        ])
+
+        elo_preds = (elo_probas >= 0.5).astype(int)
+        self.evaluation_results['elo'] = self._evaluate_model(
+            y_true=y_test, y_pred=elo_preds, y_pred_proba=elo_probas, model_name='elo'
+        )
+        print(f"  ELO ROC-AUC: {self.evaluation_results['elo']['roc_auc']:.4f}")
+
+        # Ensemble: average probabilities from all available models + ELO
+        all_probas = [elo_probas]
+        for key, model in self.models.items():
+            try:
+                if key == 'neural_network':
+                    scaler = self.scalers.get('neural_network')
+                    X_scaled = scaler.transform(X_test) if scaler else X_test
+                    proba = model.predict(X_scaled, verbose=0).flatten()
+                else:
+                    proba = model.predict_proba(X_test)[:, 1]
+                all_probas.append(proba)
+            except Exception:
+                pass
+
+        ensemble_probas = np.mean(all_probas, axis=0)
+        ensemble_preds = (ensemble_probas >= 0.5).astype(int)
+        self.evaluation_results['ensemble'] = self._evaluate_model(
+            y_true=y_test, y_pred=ensemble_preds, y_pred_proba=ensemble_probas, model_name='ensemble'
+        )
+        print(f"  Ensemble ROC-AUC: {self.evaluation_results['ensemble']['roc_auc']:.4f}")
+
     def walk_forward_backtest(self, df_feats, feature_cols, start_year=2015):
         """
         Walk-forward backtest: train on all data before year Y, test on year Y.
@@ -543,4 +592,4 @@ if __name__ == "__main__":
     
     # Train models
     trainer = ModelTrainer()
-    trainer.train_all_models(X_train, y_train, X_test, y_test, feature_names, encoders=encoders)
+    trainer.train_all_models(X_train, y_train, X_test, y_test, feature_names, encoders=encoders, test_df=test_df)

@@ -260,6 +260,9 @@ def compute_symmetric_features(df):
             'matches_last_30d_diff': p1_matches_30d - p2_matches_30d,
             # Surface return pressure diff
             'surface_return_diff': p1_surface_return - p2_surface_return,
+            # Player names (for ELO/ensemble evaluation)
+            'p1_name': p1,
+            'p2_name': p2,
             # Metadata for splitting
             'tourney_date': row['tourney_date'],
             # Filter criteria

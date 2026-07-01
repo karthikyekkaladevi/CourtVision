@@ -508,15 +508,20 @@ def option_3_performance():
         print("="*60)
 
         results_df = pd.DataFrame(results).T
-        results_df = results_df[['accuracy', 'precision', 'recall', 'f1_score', 'roc_auc', 'log_loss']]
+        # Show all models that have numeric roc_auc
+        display_cols = ['accuracy', 'precision', 'recall', 'f1_score', 'roc_auc', 'log_loss']
+        results_df = results_df[display_cols]
         results_df.columns = ['Accuracy', 'Precision', 'Recall', 'F1', 'ROC-AUC', 'Log Loss']
+        results_df = results_df.apply(pd.to_numeric, errors='coerce')
 
         print("\n" + results_df.round(4).to_string())
 
-        print("\nBest Models:")
-        print(f"  Accuracy: {results_df['Accuracy'].idxmax()} ({results_df['Accuracy'].max():.4f})")
-        print(f"  F1:       {results_df['F1'].idxmax()} ({results_df['F1'].max():.4f})")
-        print(f"  ROC-AUC:  {results_df['ROC-AUC'].idxmax()} ({results_df['ROC-AUC'].max():.4f})")
+        valid = results_df.dropna(subset=['ROC-AUC'])
+        if not valid.empty:
+            print("\nBest Models:")
+            print(f"  Accuracy: {valid['Accuracy'].idxmax()} ({valid['Accuracy'].max():.4f})")
+            print(f"  F1:       {valid['F1'].idxmax()} ({valid['F1'].max():.4f})")
+            print(f"  ROC-AUC:  {valid['ROC-AUC'].idxmax()} ({valid['ROC-AUC'].max():.4f})")
 
         # Feature importance
         print("\n" + "="*60)
