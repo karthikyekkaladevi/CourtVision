@@ -21,6 +21,21 @@ ATP_500_TOURNAMENTS = {
 }
 
 
+VALID_SURFACES = {'hard': 'Hard', 'clay': 'Clay', 'grass': 'Grass', 'carpet': 'Carpet'}
+
+
+def get_validated_surface(default='Hard'):
+    """Prompt for a surface until a valid one is entered (case-insensitive)."""
+    while True:
+        raw = input(f"  Surface (Hard/Clay/Grass, default {default}): ").strip()
+        if not raw:
+            return default
+        surface = VALID_SURFACES.get(raw.lower())
+        if surface:
+            return surface
+        print(f"    [ERR] '{raw}' is not a valid surface. Choose Hard, Clay, or Grass.")
+
+
 def get_validated_player_name(simulator, p_name, label="Player"):
     """
     Helper to validate a player name with fuzzy matching and a retry loop.
@@ -141,7 +156,7 @@ def option_1_predict():
                 continue
             break
 
-        surface = input("  Surface (Hard/Clay/Grass, default Hard): ").strip() or 'Hard'
+        surface = get_validated_surface()
 
         while True:
             sets_input = input("  Best of (3/5, default 3): ").strip()
@@ -287,9 +302,17 @@ def _simulate_custom_tournament():
     draw_size_input = input("\n  Draw size (8/16/32/64/128, default 8): ").strip()
     draw_size = int(draw_size_input) if draw_size_input.isdigit() else 8
 
-    surface = input("  Surface (Hard/Clay/Grass, default Hard): ").strip() or 'Hard'
+    surface = get_validated_surface()
 
-    tourney_level = input("  Tournament level (M=Masters / G=Grand Slam / F=ATP Finals, default M): ").strip().upper() or 'M'
+    while True:
+        level_input = input("  Tournament level (M=Masters / G=Grand Slam / F=ATP Finals, default M): ").strip().upper()
+        if not level_input:
+            tourney_level = 'M'
+            break
+        if level_input in ('M', 'G', 'F', 'A'):
+            tourney_level = level_input
+            break
+        print(f"    [ERR] '{level_input}' is not a valid level. Choose M, G, or F.")
 
     # Tournament name
     tournament_name = input("  Tournament name (optional): ").strip() or f"{surface} Tournament"

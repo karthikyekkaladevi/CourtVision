@@ -29,18 +29,17 @@ def load_data(data_path='tennis_atp-master', start_year=1968, end_year=None, inc
             print(f"Reading single data file: {data_path}...")
             df = pd.read_csv(data_path, low_memory=False)
         elif path.is_dir():
-            # Check for a valid parquet cache
-            cache_path = path / 'cache.parquet'
-            cache_key_path = path / 'cache.key'
+            # Check for a valid parquet cache.
+            # Each (year range, types) combination gets its own cache file so
+            # different dataset selections don't invalidate each other's cache.
             cache_key = f"{start_year}-{end_year}-{'-'.join(sorted(include_types))}"
+            cache_path = path / f'cache_{cache_key}.parquet'
 
-            if cache_path.exists() and cache_key_path.exists():
-                stored_key = cache_key_path.read_text().strip()
-                if stored_key == cache_key:
-                    print(f"Loading cached data from {cache_path}...")
-                    df = pd.read_parquet(cache_path)
-                    print(f"[OK] Successfully loaded total data: {df.shape[0]:,} rows, {df.shape[1]} columns")
-                    return df
+            if cache_path.exists():
+                print(f"Loading cached data from {cache_path}...")
+                df = pd.read_parquet(cache_path)
+                print(f"[OK] Successfully loaded total data: {df.shape[0]:,} rows, {df.shape[1]} columns")
+                return df
 
             print(f"Reading tournament data from directory: {data_path} ({start_year}-{end_year})...")
 
@@ -116,17 +115,23 @@ def load_data(data_path='tennis_atp-master', start_year=1968, end_year=None, inc
         for col in numeric_cols:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
-        
+
+        # Normalise tourney_level to strings: futures CSVs use numeric level codes
+        # while tour CSVs use letters, and the mixed int/str column breaks parquet caching
+        if 'tourney_level' in df.columns:
+            mask = df['tourney_level'].notna()
+            df.loc[mask, 'tourney_level'] = df.loc[mask, 'tourney_level'].astype(str)
+
         print(f"[OK] Successfully loaded total data: {df.shape[0]:,} rows, {df.shape[1]} columns")
 
         # Save parquet cache for future runs
         if path.is_dir():
             try:
                 df.to_parquet(cache_path, index=False)
-                cache_key_path.write_text(cache_key)
                 print(f"  Cached to {cache_path} for faster future loads.")
-            except Exception:
-                pass  # Caching is best-effort
+            except Exception as e:
+                # Caching is best-effort, but don't hide the reason it failed
+                print(f"  Warning: could not write parquet cache ({e}). Future loads will re-read the CSVs.")
 
         return df
     except FileNotFoundError:

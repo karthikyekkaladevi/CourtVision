@@ -33,6 +33,7 @@ class ELOCalculator:
 
     def __init__(self, cache_path='models/elo_ratings.json'):
         self.cache_path = cache_path
+        self._base_cache_path = cache_path
         self.ratings = {}           # player_name -> float
         self.surface_ratings = {}   # (player_name, surface) -> float
         self._is_computed = False
@@ -159,11 +160,18 @@ class ELOCalculator:
         Load ratings from JSON cache.
         Returns (success: bool, row_count: int).
         """
-        if not os.path.exists(self.cache_path):
-            return False, 0
+        load_path = self.cache_path
+        if not os.path.exists(load_path):
+            # Fall back to the newest per-dataset cache written by get_or_compute
+            import glob
+            base, ext = os.path.splitext(self._base_cache_path)
+            candidates = glob.glob(f"{base}_*{ext}")
+            if not candidates:
+                return False, 0
+            load_path = max(candidates, key=os.path.getmtime)
 
         try:
-            with open(self.cache_path, 'r', encoding='utf-8') as f:
+            with open(load_path, 'r', encoding='utf-8') as f:
                 cache = json.load(f)
 
             self.ratings = cache.get('overall', {})
@@ -187,6 +195,12 @@ class ELOCalculator:
         Load ratings from cache if valid; otherwise compute and save.
         Staleness check: recompute if row count has changed.
         """
+        # Each dataset gets its own cache file (keyed by row count) so that
+        # alternating between the full dataset (predictions) and the tour-only
+        # dataset (simulations) doesn't clobber and recompute ratings each time.
+        base, ext = os.path.splitext(self._base_cache_path)
+        self.cache_path = f"{base}_{len(df)}{ext}"
+
         loaded, cached_row_count = self.load()
 
         if loaded and cached_row_count == len(df):

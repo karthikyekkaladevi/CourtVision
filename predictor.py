@@ -140,24 +140,31 @@ class MatchPredictor:
         """
         Predict match outcome between two players.
         """
-        # Build feature vector
+        # Build feature vectors in both directions. Each model's probability is
+        # averaged as 0.5 * (P(p1 beats p2) + 1 - P(p2 beats p1)), which cancels
+        # any directional bias a model learned (the neural network in particular
+        # is asymmetric by several points otherwise).
         X = self._build_feature_vector(player1_data, player2_data, surface, tourney_level)
-        
+        X_rev = self._build_feature_vector(player2_data, player1_data, surface, tourney_level)
+
         # Get predictions from all models
         predictions = {}
-        
+
         for model_name, model in self.trainer.models.items():
             try:
                 if model_name == 'neural_network':
                     scaler = self.trainer.scalers.get('neural_network')
                     if scaler:
-                        X_scaled = scaler.transform(X)
-                        proba = model.predict(X_scaled, verbose=0)[0][0]
+                        proba_fwd = model.predict(scaler.transform(X), verbose=0)[0][0]
+                        proba_rev = model.predict(scaler.transform(X_rev), verbose=0)[0][0]
                     else:
                         continue
                 else:
-                    proba = model.predict_proba(X)[0][1]
-                
+                    proba_fwd = model.predict_proba(X)[0][1]
+                    proba_rev = model.predict_proba(X_rev)[0][1]
+
+                proba = 0.5 * (proba_fwd + (1.0 - proba_rev))
+
                 predictions[model_name] = {
                     'probability': float(proba),
                     'predicted_winner': player1_name if proba >= 0.5 else player2_name,
@@ -352,7 +359,23 @@ class MatchPredictor:
             age = latest_match.get('loser_age', 25)
             height = latest_match.get('loser_ht', 180)
             hand = latest_match.get('loser_hand', 'R')
-        
+
+        # Use the career-best (peak) rank and points within the provided data
+        # rather than the last match played — a retired player's final rank
+        # (e.g. #154 at a farewell event) badly misrepresents their level.
+        rank_series = pd.concat([
+            winner_matches['winner_rank'] if 'winner_rank' in winner_matches.columns else pd.Series(dtype=float),
+            loser_matches['loser_rank'] if 'loser_rank' in loser_matches.columns else pd.Series(dtype=float),
+        ]).dropna()
+        pts_series = pd.concat([
+            winner_matches['winner_rank_points'] if 'winner_rank_points' in winner_matches.columns else pd.Series(dtype=float),
+            loser_matches['loser_rank_points'] if 'loser_rank_points' in loser_matches.columns else pd.Series(dtype=float),
+        ]).dropna()
+        if len(rank_series) > 0:
+            rank = rank_series.min()
+        if len(pts_series) > 0:
+            rank_points = pts_series.max()
+
         # Overall win rate (raw ratio, matches training computation)
         win_rate = total_wins / total_matches if total_matches > 0 else 0.5
         
@@ -530,10 +553,10 @@ class MatchPredictor:
 
         career_surface_return_pct = ret_won_total / ret_svpt_total if ret_svpt_total > 0 else 0.35
 
-        return {
-            'rank': rank if pd.notna(rank) else 9999,
-            'rank_points': rank_points if pd.notna(rank_points) else 0,
-            'seed': seed if pd.notna(seed) else 999,
+        result = {
+            'rank': int(rank) if pd.notna(rank) else 9999,
+            'rank_points': int(rank_points) if pd.notna(rank_points) else 0,
+            'seed': int(seed) if pd.notna(seed) else 999,
             'age': age if pd.notna(age) else 25,
             'height': height if pd.notna(height) else 180,
             'hand': hand if pd.notna(hand) else 'R',
@@ -869,8 +892,8 @@ class MatchPredictor:
             r2 = p2.get('rank', 9999)
             
             # Display rank (use 'UR' for unranked)
-            rank1_str = f"#{r1}" if r1 < 9999 else "UR"
-            rank2_str = f"#{r2}" if r2 < 9999 else "UR"
+            rank1_str = f"#{int(r1)}" if r1 < 9999 else "UR"
+            rank2_str = f"#{int(r2)}" if r2 < 9999 else "UR"
             
             print(f"  {'Rank':20s} {rank1_str:>{col_w}s}   {rank2_str:>{col_w}s}")
             row("Ranking Points", "rank_points", ".0f")

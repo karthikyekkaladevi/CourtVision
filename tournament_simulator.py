@@ -19,6 +19,7 @@ class TournamentSimulator:
         self.predictor = MatchPredictor(models_dir)
         self.df_historical = None
         self._all_players_cache = None
+        self._players_lower_map = None  # lowercase name -> canonical name
         self._matchup_cache = {} # Cache for Monte Carlo simulations
     
     def load_historical_data(self, data_path='tennis_atp-master', include_types=['tour']):
@@ -28,6 +29,7 @@ class TournamentSimulator:
         all_winners = self.df_historical['winner_name'].dropna().unique()
         all_losers = self.df_historical['loser_name'].dropna().unique()
         self._all_players_cache = sorted(list(set(all_winners) | set(all_losers)))
+        self._players_lower_map = {p.lower(): p for p in self._all_players_cache}
 
     def validate_player_name(self, name):
         """
@@ -40,10 +42,14 @@ class TournamentSimulator:
         if self.df_historical is None:
             self.load_historical_data()
             
-        # 1. Exact match check
+        # 1. Exact match check (case-insensitive, e.g. "roger federer")
+        name = name.strip()
         if name in self._all_players_cache:
             return True, name
-            
+        ci_match = self._players_lower_map.get(name.lower())
+        if ci_match:
+            return True, ci_match
+
         # 2. Check for "First Initial + Last Name" (e.g., "A Kuznetsov" or "A. Kuznetsov")
         import re
         abbrev_match = re.match(r'^([A-Za-z])\.?\s+(.+)$', name.strip())
@@ -68,11 +74,20 @@ class TournamentSimulator:
             elif len(matching_players) > 1:
                 return False, sorted(matching_players)
 
-        # 3. Try fuzzy matching as a fallback
-        matches = difflib.get_close_matches(name, self._all_players_cache, n=3, cutoff=0.7)
-        if matches:
-            return False, matches
-            
+        # 3. Bare last-name match (e.g. "federer" -> "Roger Federer")
+        target = name.lower()
+        last_name_matches = [p for p in self._all_players_cache
+                             if p.lower().endswith(' ' + target)]
+        if len(last_name_matches) == 1:
+            return True, last_name_matches[0]
+        elif len(last_name_matches) > 1:
+            return False, sorted(last_name_matches)[:10]
+
+        # 4. Try fuzzy matching as a fallback (case-insensitive)
+        lower_matches = difflib.get_close_matches(target, list(self._players_lower_map.keys()), n=3, cutoff=0.7)
+        if lower_matches:
+            return False, [self._players_lower_map[m] for m in lower_matches]
+
         return False, []
 
     def get_player_career_range(self, name):
@@ -340,13 +355,16 @@ class TournamentSimulator:
             
             normalized_players.append(p_info)
         
-        # Add BYEs until draw_size, assigning them high seeds
-        while len(normalized_players) < draw_size:
-            seed = len(normalized_players) + 1
-            normalized_players.append({'name': 'BYE', 'year': None, 'seed': seed})
-        
-        # Sort players by seed to easily map them to the distribution
+        # Sort by seed, then compact to contiguous unique seeds 1..N.
+        # Real draws can have missing seed numbers (withdrawn seeds) or duplicates,
+        # but the seed_to_player lookup below requires exactly the seeds 1..draw_size.
         normalized_players.sort(key=lambda x: x['seed'])
+        for i, p in enumerate(normalized_players):
+            p['seed'] = i + 1
+
+        # Add BYEs until draw_size, assigning them the remaining high seeds
+        while len(normalized_players) < draw_size:
+            normalized_players.append({'name': 'BYE', 'year': None, 'seed': len(normalized_players) + 1})
         
         # Map seeds to names for quick lookup
         seed_to_player = {p['seed']: p for p in normalized_players}
@@ -650,7 +668,9 @@ class TournamentSimulator:
             'rr_matches': matches_a + matches_b,
             'bracket_history': history,
             'champion': champion['name'],
-            'runner_up': runner_up['name']
+            'runner_up': runner_up['name'],
+            'semi_finalists': [sf1_p1, sf1_p2, sf2_p1, sf2_p2],
+            'quarter_finalists': []
         }
 
     def simulate_tournament_monte_carlo(self, players, iterations=1000, surface=None, tourney_level=None, use_model='average', draw_size=None):
@@ -720,7 +740,7 @@ class TournamentSimulator:
             if runner_up:
                 runner_up_counts[runner_up] = runner_up_counts.get(runner_up, 0) + 1
 
-            for sf in res['semi_finalists']:
+            for sf in res.get('semi_finalists', []):
                 semi_counts[sf['name']] = semi_counts.get(sf['name'], 0) + 1
 
         # Calculate probabilities

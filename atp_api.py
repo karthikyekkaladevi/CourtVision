@@ -49,6 +49,11 @@ WIKI_TOURNAMENT_MAP = {
 
 def _api_get(endpoint, params=None):
     """Make an authenticated API request with rate limiting and retry."""
+    if not API_KEY:
+        print("  ATP_API_KEY is not set. Create a .env file in the project root with")
+        print("  ATP_API_KEY=<your key> (free key at https://www.balldontlie.io) to use live tournament data.")
+        return None
+
     url = f"{API_BASE}/{endpoint.lstrip('/')}"
     headers = {"Authorization": API_KEY}
 
@@ -63,6 +68,9 @@ def _api_get(endpoint, params=None):
                 print(f"  Rate limited, waiting {wait:.0f}s...")
                 time.sleep(wait)
                 continue
+            elif resp.status_code in (401, 403):
+                print(f"  API error: HTTP {resp.status_code} Unauthorized — your ATP_API_KEY in .env is missing or invalid.")
+                return None
             else:
                 print(f"  API error: HTTP {resp.status_code}")
                 return None
